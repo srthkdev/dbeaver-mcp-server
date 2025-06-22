@@ -1,0 +1,8 @@
+src/
+docs/
+examples/
+scripts/
+.gitignore
+tsconfig.json
+*.test.ts
+.env*
