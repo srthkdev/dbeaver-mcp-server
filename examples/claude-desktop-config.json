@@ -1,0 +1,67 @@
+{
+  "mcpServers": {
+    "dbeaver": {
+      "command": "dbeaver-mcp-server",
+      "env": {
+        "DBEAVER_DEBUG": "false",
+        "DBEAVER_TIMEOUT": "30000"
+      }
+    }
+  },
+  "explanation": {
+    "purpose": "Enhanced DBeaver MCP Server configuration for Claude Desktop",
+    "features": [
+      "Universal database support (200+ databases)",
+      "Resource-based schema browsing",
+      "Business insights tracking",
+      "Complete DDL operations",
+      "Multiple export formats",
+      "Advanced safety features"
+    ],
+    "tools_available": [
+      "list_connections",
+      "get_connection_info", 
+      "execute_query",
+      "write_query",
+      "create_table",
+      "alter_table",
+      "drop_table",
+      "get_table_schema",
+      "list_tables",
+      "export_data",
+      "test_connection",
+      "get_database_stats",
+      "append_insight",
+      "list_insights"
+    ],
+    "environment_variables": {
+      "DBEAVER_PATH": "Custom path to DBeaver executable (auto-detected if not set)",
+      "DBEAVER_TIMEOUT": "Query timeout in milliseconds (default: 30000)",
+      "DBEAVER_DEBUG": "Enable debug logging (true/false)"
+    },
+    "configuration_examples": {
+      "production": {
+        "command": "dbeaver-mcp-server",
+        "env": {
+          "DBEAVER_DEBUG": "false",
+          "DBEAVER_TIMEOUT": "60000"
+        }
+      },
+      "development": {
+        "command": "dbeaver-mcp-server",
+        "env": {
+          "DBEAVER_DEBUG": "true",
+          "DBEAVER_TIMEOUT": "30000"
+        }
+      },
+      "custom_path": {
+        "command": "dbeaver-mcp-server",
+        "env": {
+          "DBEAVER_PATH": "/custom/path/to/dbeaver",
+          "DBEAVER_DEBUG": "false",
+          "DBEAVER_TIMEOUT": "45000"
+        }
+      }
+    }
+  }
+}
