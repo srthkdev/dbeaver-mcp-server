@@ -376,3 +376,33 @@ export function parseVersionFromResult(result: any): string | undefined {
   }
   return undefined;
 }
+
+/**
+ * Convert query results to CSV format
+ */
+export function convertToCSV(columns: string[], rows: any[][]): string {
+  if (rows.length === 0) return '';
+  
+  // Create CSV header row
+  let csv = columns.map(col => `"${col.replace(/"/g, '""')}"`).join(',') + '\n';
+  
+  // Add data rows
+  rows.forEach(row => {
+    const values = row.map(val => {
+      // Handle null/undefined values
+      if (val === null || val === undefined) {
+        return '';
+      }
+      
+      // Convert to string and escape quotes
+      const strVal = String(val);
+      if (strVal.includes(',') || strVal.includes('"') || strVal.includes('\n')) {
+        return `"${strVal.replace(/"/g, '""')}"`;
+      }
+      return strVal;
+    });
+    csv += values.join(',') + '\n';
+  });
+  
+  return csv;
+}

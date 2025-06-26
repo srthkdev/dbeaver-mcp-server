@@ -87,3 +87,18 @@ export interface DBeaverConnection {
     serverVersion: string;
     uptime?: string;
   }
+
+  export interface BusinessInsight {
+    id: number;
+    insight: string;
+    created_at: string;
+    connection?: string;
+    tags?: string[];
+  }
+
+  export interface TableResource {
+    connectionId: string;
+    tableName: string;
+    schema?: string;
+    uri: string;
+  }
