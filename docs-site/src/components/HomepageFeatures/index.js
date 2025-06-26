@@ -5,7 +5,7 @@ import styles from './styles.module.css';
 const FeatureList = [
   {
     title: 'Universal Database Support',
-    // ... image ...
+    Svg: require('@site/static/img/undraw_docusaurus_mountain.svg').default,
     description: (
       <>
         Works with all 200+ database types supported by DBeaver, providing unparalleled access to your data.
@@ -14,7 +14,7 @@ const FeatureList = [
   },
   {
     title: 'Production Ready',
-    // ... image ...
+    Svg: require('@site/static/img/undraw_docusaurus_tree.svg').default,
     description: (
       <>
         Full error handling, logging, and safety checks to ensure the server is reliable for real-world usage.
@@ -23,7 +23,7 @@ const FeatureList = [
   },
   {
     title: 'Feature Rich',
-    // ... image ...
+    Svg: require('@site/static/img/undraw_docusaurus_react.svg').default,
     description: (
       <>
         Includes resource browsing, business insights, multiple export formats, and full schema management.
@@ -32,4 +32,30 @@ const FeatureList = [
   },
 ];
 
-// ... existing code ... 
+function Feature({Svg, title, description}) {
+  return (
+    <div className={clsx('col col--4')}>
+      <div className="text--center">
+        <Svg className={styles.featureSvg} role="img" />
+      </div>
+      <div className="text--center padding-horiz--md">
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+    </div>
+  );
+}
+
+export default function HomepageFeatures() {
+  return (
+    <section className={styles.features}>
+      <div className="container">
+        <div className="row">
+          {FeatureList.map((props, idx) => (
+            <Feature key={idx} {...props} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+} 
