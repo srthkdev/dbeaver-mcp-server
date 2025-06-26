@@ -47,3 +47,5 @@ coverage/
 
 # Test results
 test-results/
+
+database-mcp/
