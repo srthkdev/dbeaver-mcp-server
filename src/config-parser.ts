@@ -9,6 +9,7 @@ const parseXML = promisify(parseString);
 
 export class DBeaverConfigParser {
   private config: DBeaverConfig;
+  private isNewFormat: boolean = false;
 
   constructor(config: DBeaverConfig = {}) {
     this.config = {
@@ -16,6 +17,19 @@ export class DBeaverConfigParser {
       debug: config.debug || false,
       ...config
     };
+    
+    // Detect if we're using the new DBeaver format
+    this.isNewFormat = this.detectNewFormat();
+  }
+
+  private detectNewFormat(): boolean {
+    const newFormatPath = path.join(
+      this.config.workspacePath!,
+      'General',
+      '.dbeaver',
+      'data-sources.json'
+    );
+    return fs.existsSync(newFormatPath);
   }
 
   private getDefaultWorkspacePath(): string {
@@ -33,23 +47,41 @@ export class DBeaverConfigParser {
   }
 
   private getConnectionsFilePath(): string {
-    return path.join(
-      this.config.workspacePath!,
-      '.metadata',
-      '.plugins',
-      'org.jkiss.dbeaver.core',
-      'connections.xml'
-    );
+    if (this.isNewFormat) {
+      return path.join(
+        this.config.workspacePath!,
+        'General',
+        '.dbeaver',
+        'data-sources.json'
+      );
+    } else {
+      return path.join(
+        this.config.workspacePath!,
+        '.metadata',
+        '.plugins',
+        'org.jkiss.dbeaver.core',
+        'connections.xml'
+      );
+    }
   }
 
   private getCredentialsFilePath(): string {
-    return path.join(
-      this.config.workspacePath!,
-      '.metadata',
-      '.plugins',
-      'org.jkiss.dbeaver.core',
-      'credentials-config.json'
-    );
+    if (this.isNewFormat) {
+      return path.join(
+        this.config.workspacePath!,
+        'General',
+        '.dbeaver',
+        'credentials-config.json'
+      );
+    } else {
+      return path.join(
+        this.config.workspacePath!,
+        '.metadata',
+        '.plugins',
+        'org.jkiss.dbeaver.core',
+        'credentials-config.json'
+      );
+    }
   }
 
   async parseConnections(): Promise<DBeaverConnection[]> {
@@ -60,13 +92,70 @@ export class DBeaverConfigParser {
     }
 
     try {
-      const xmlContent = fs.readFileSync(connectionsFile, 'utf-8');
-      const result = await parseXML(xmlContent);
-      
-      return this.extractConnections(result);
+      if (this.isNewFormat) {
+        return this.parseNewFormatConnections(connectionsFile);
+      } else {
+        return this.parseOldFormatConnections(connectionsFile);
+      }
     } catch (error) {
       throw new Error(`Failed to parse DBeaver connections: ${error}`);
     }
+  }
+
+  private async parseNewFormatConnections(filePath: string): Promise<DBeaverConnection[]> {
+    const jsonContent = fs.readFileSync(filePath, 'utf-8');
+    const data = JSON.parse(jsonContent);
+    
+    const connections: DBeaverConnection[] = [];
+    
+    if (!data.connections) {
+      return connections;
+    }
+
+    for (const [connectionId, connData] of Object.entries(data.connections)) {
+      const conn = connData as any;
+      
+      const connection: DBeaverConnection = {
+        id: connectionId,
+        name: conn.name || connectionId,
+        driver: conn.driver || conn.provider || '',
+        url: '',
+        folder: conn.folder || '',
+        description: conn.description || '',
+        readonly: conn.readonly === true
+      };
+
+      // Extract properties from the new format
+      if (conn.configuration) {
+        const config = conn.configuration;
+        connection.properties = {
+          url: config.url || '',
+          user: config.user || '',
+          host: config.host || '',
+          port: config.port ? String(config.port) : '',
+          database: config.database || '',
+          server: config.server || '',
+          ...config
+        };
+
+        connection.url = config.url || '';
+        connection.user = config.user || '';
+        connection.host = config.host || config.server || '';
+        connection.port = config.port ? parseInt(String(config.port)) : undefined;
+        connection.database = config.database || '';
+      }
+
+      connections.push(connection);
+    }
+
+    return connections;
+  }
+
+  private async parseOldFormatConnections(filePath: string): Promise<DBeaverConnection[]> {
+    const xmlContent = fs.readFileSync(filePath, 'utf-8');
+    const result = await parseXML(xmlContent);
+    
+    return this.extractConnections(result);
   }
 
   private extractConnections(xmlData: any): DBeaverConnection[] {
@@ -140,6 +229,12 @@ export class DBeaverConfigParser {
   }
 
   async getDriverInfo(driverId: string): Promise<any> {
+    if (this.isNewFormat) {
+      // New format doesn't have a separate drivers.xml file
+      // Driver info is embedded in the data-sources.json
+      return null;
+    }
+
     const driversFile = path.join(
       this.config.workspacePath!,
       '.metadata',
@@ -188,9 +283,14 @@ export class DBeaverConfigParser {
 
   isWorkspaceValid(): boolean {
     const workspacePath = this.config.workspacePath!;
-    const metadataPath = path.join(workspacePath, '.metadata');
     
-    return fs.existsSync(workspacePath) && fs.existsSync(metadataPath);
+    if (this.isNewFormat) {
+      const newFormatPath = path.join(workspacePath, 'General', '.dbeaver');
+      return fs.existsSync(workspacePath) && fs.existsSync(newFormatPath);
+    } else {
+      const metadataPath = path.join(workspacePath, '.metadata');
+      return fs.existsSync(workspacePath) && fs.existsSync(metadataPath);
+    }
   }
 
   getDebugInfo(): object {
@@ -199,6 +299,7 @@ export class DBeaverConfigParser {
       connectionsFile: this.getConnectionsFilePath(),
       connectionsFileExists: fs.existsSync(this.getConnectionsFilePath()),
       workspaceValid: this.isWorkspaceValid(),
+      isNewFormat: this.isNewFormat,
       platform: os.platform(),
       nodeVersion: process.version
     };
