@@ -2,6 +2,10 @@
 
 A Model Context Protocol (MCP) server that integrates with DBeaver to provide AI assistants access to 200+ database types through DBeaver's existing connections. This MCP server is designed to be production-ready and feature-complete for real-world usage with Claude, Cursor, and other MCP-compatible AI assistants.
 
+[![npm version](https://badge.fury.io/js/dbeaver-mcp-server.svg)](https://badge.fury.io/js/dbeaver-mcp-server)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
+
 ## 🚀 Features
 
 - **Universal Database Support**: Works with all 200+ database types supported by DBeaver
@@ -42,17 +46,26 @@ A Model Context Protocol (MCP) server that integrates with DBeaver to provide AI
 
 ## 🛠️ Installation
 
-See the [Installation Guide](docs/installations.md) for full details.
-
-### Quick Start
+### Quick Install (Recommended)
 ```bash
 npm install -g dbeaver-mcp-server
-dbeaver-mcp-server
+```
+
+### Verify Installation
+```bash
+dbeaver-mcp-server --help
+```
+
+### Manual Installation
+```bash
+git clone https://github.com/srthkdev/dbeaver-mcp-server.git
+cd dbeaver-mcp-server
+npm install
+npm run build
+npm link  # Makes the command available globally
 ```
 
 ## 🖥️ Configuration
-
-See the [Configuration Guide](docs/configurations.md) for Claude Desktop and environment variable options.
 
 ### Claude Desktop Configuration
 ```json
@@ -68,6 +81,11 @@ See the [Configuration Guide](docs/configurations.md) for Claude Desktop and env
   }
 }
 ```
+
+### Environment Variables
+- `DBEAVER_PATH`: Path to DBeaver executable (auto-detected if not set)
+- `DBEAVER_TIMEOUT`: Query timeout in milliseconds (default: 30000)
+- `DBEAVER_DEBUG`: Enable debug logging (true/false)
 
 ## 💡 Usage Examples
 
@@ -109,10 +127,37 @@ The server provides MCP resources for browsing database schemas:
 - **Business Context**: Insight tracking for data analysis workflows
 - **Multi-format Export**: Support for CSV and JSON export formats
 
-## 🛠️ Scripts
+## 🛠️ Development
 
+### Setup Development Environment
+```bash
+git clone https://github.com/srthkdev/dbeaver-mcp-server.git
+cd dbeaver-mcp-server
+npm install
+```
+
+### Available Scripts
+```bash
+npm run build          # Build the project
+npm run dev            # Watch mode for development
+npm run clean          # Clean build artifacts
+npm run start          # Start the server
+npm run test           # Run tests (placeholder)
+npm run lint           # Run linter (placeholder)
+```
+
+### Publishing to npm
+```bash
+npm run publish        # Interactive publish script
+npm run publish:patch  # Quick patch version (1.1.3 → 1.1.4)
+npm run publish:minor  # Quick minor version (1.1.3 → 1.2.0)
+npm run publish:major  # Quick major version (1.1.3 → 2.0.0)
+```
+
+### Build Scripts
 - `scripts/build.sh`: Build the project
 - `scripts/install.sh`: Install dependencies and build
+- `scripts/publish.sh`: Publish to npm with checks
 
 ## 📝 Documentation
 
@@ -141,6 +186,14 @@ This DBeaver MCP server provides:
 4. Commit your changes: `git commit -m 'Add new feature'`
 5. Push to the branch: `git push origin feature/new-feature`
 6. Submit a pull request
+
+## 📦 NPM Package
+
+This project is published on npm as `dbeaver-mcp-server`:
+- **Package**: https://www.npmjs.com/package/dbeaver-mcp-server
+- **Install**: `npm install -g dbeaver-mcp-server`
+- **Current Version**: 1.1.3
+- **License**: MIT
 
 ## 📝 License
 MIT License - see LICENSE file for details

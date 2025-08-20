@@ -23,18 +23,20 @@ dbeaver --version
 
 ### Method 1: Global npm Installation (Recommended)
 ```bash
+# Install from npm registry
 npm install -g dbeaver-mcp-server
+
 # Verify installation
-dbeaver-mcp-server --version
+dbeaver-mcp-server --help
 ```
 
 ### Method 2: Local Development Installation
 ```bash
-git clone https://github.com/yourusername/dbeaver-mcp-server.git
+git clone https://github.com/srthkdev/dbeaver-mcp-server.git
 cd dbeaver-mcp-server
 npm install
 npm run build
-npm link
+npm link  # Makes the command available globally
 ```
 
 ### Method 3: Direct Download
@@ -59,7 +61,8 @@ Add MCP Server Configuration:
     "dbeaver": {
       "command": "dbeaver-mcp-server",
       "env": {
-        "DBEAVER_DEBUG": "false"
+        "DBEAVER_DEBUG": "false",
+        "DBEAVER_TIMEOUT": "30000"
       }
     }
   }
@@ -71,6 +74,10 @@ Restart Claude Desktop
 ## Verification
 Test the installation:
 ```bash
+# Test help command
+dbeaver-mcp-server --help
+
+# Test MCP server functionality
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | dbeaver-mcp-server
 # Should return available tools
 ```
@@ -92,6 +99,21 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | dbeaver-mcp-
 - DBeaver AppImage and package installations are both supported
 - May need to set execute permissions: `chmod +x dbeaver-mcp-server`
 
+## Environment Variables
+
+Configure the server behavior with these environment variables:
+
+- `DBEAVER_PATH`: Path to DBeaver executable (auto-detected if not set)
+- `DBEAVER_TIMEOUT`: Query timeout in milliseconds (default: 30000)
+- `DBEAVER_DEBUG`: Enable debug logging (true/false)
+
+Example:
+```bash
+export DBEAVER_DEBUG=true
+export DBEAVER_TIMEOUT=60000
+dbeaver-mcp-server
+```
+
 ## Troubleshooting Installation
 
 ### Common Issues
@@ -105,8 +127,11 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | dbeaver-mcp-
 - Node.js version issues
   - Use nvm to manage Node.js versions
   - Install recommended version: `nvm install 18 && nvm use 18`
+- Binary execution issues
+  - Ensure the package was installed correctly: `npm install -g dbeaver-mcp-server@latest`
+  - Check if the binary has execute permissions
 
 ## Getting Help
-- Check the Troubleshooting Guide
-- Open an issue on GitHub
-- Join our Discord community
+- Check the [Troubleshooting Guide](../troubleshooting.md)
+- Open an issue on [GitHub](https://github.com/srthkdev/dbeaver-mcp-server/issues)
+- View the package on [npm](https://www.npmjs.com/package/dbeaver-mcp-server)

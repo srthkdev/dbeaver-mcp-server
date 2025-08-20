@@ -19,6 +19,7 @@
         "publish:patch": "npm version patch && npm publish",
         "publish:minor": "npm version minor && npm publish",
         "publish:major": "npm version major && npm publish",
+        "publish": "./scripts/publish.sh",
         "prepublishOnly": "npm run clean && npm run build",
         "test": "echo \"No tests specified\" && exit 0",
         "lint": "echo \"No linter configured\" && exit 0"
