@@ -5,53 +5,59 @@
     "main": "dist/index.js",
     "type": "module",
     "bin": {
-      "dbeaver-mcp-server": "dist/index.js"
+        "dbeaver-mcp-server": "dist/index.js"
     },
     "scripts": {
-      "build": "tsc && shx chmod +x dist/index.js",
-      "dev": "tsc --watch",
-      "start": "node dist/index.js",
-      "clean": "rimraf dist",
-      "prepare": "npm run build",
-      "prepublish": "npm run clean && npm run build",
-      "watch": "tsc --watch",
-      "example": "node examples/example.js"
+        "build": "tsc && shx chmod +x dist/index.js",
+        "dev": "tsc --watch",
+        "start": "node dist/index.js",
+        "clean": "rimraf dist",
+        "prepare": "npm run build",
+        "prepublish": "npm run clean && npm run build",
+        "watch": "tsc --watch",
+        "example": "node examples/example.js",
+        "publish:patch": "npm version patch && npm publish",
+        "publish:minor": "npm version minor && npm publish",
+        "publish:major": "npm version major && npm publish",
+        "prepublishOnly": "npm run clean && npm run build",
+        "test": "echo \"No tests specified\" && exit 0",
+        "lint": "echo \"No linter configured\" && exit 0"
     },
     "keywords": [
-      "mcp",
-      "model-context-protocol",
-      "dbeaver",
-      "database",
-      "sql",
-      "claude",
-      "anthropic",
-      "cursor",
-      "ai"
+        "mcp",
+        "model-context-protocol",
+        "dbeaver",
+        "database",
+        "sql",
+        "claude",
+        "anthropic",
+        "cursor",
+        "ai"
     ],
     "author": "Sarthak Jain",
     "license": "MIT",
     "dependencies": {
-      "@modelcontextprotocol/sdk": "1.9.0",
-      "xml2js": "^0.6.2",
-      "csv-parser": "^3.0.0",
-      "csv-stringify": "^6.4.6"
+        "@modelcontextprotocol/sdk": "1.9.0",
+        "xml2js": "^0.6.2",
+        "csv-parser": "^3.0.0",
+        "csv-stringify": "^6.4.6"
     },
     "devDependencies": {
-      "@types/node": "^20.0.0",
-      "@types/xml2js": "^0.4.14",
-      "typescript": "^5.8.3",
-      "rimraf": "^5.0.5",
-      "shx": "^0.4.0"
+        "@types/node": "^20.0.0",
+        "@types/xml2js": "^0.4.14",
+        "typescript": "^5.8.3",
+        "rimraf": "^5.0.5",
+        "shx": "^0.4.0"
     },
     "engines": {
-      "node": ">=18.0.0"
+        "node": ">=18.0.0"
     },
     "repository": {
-      "type": "git",
-      "url": "https://github.com/srthkdev/dbeaver-mcp-server.git"
+        "type": "git",
+        "url": "git+https://github.com/srthkdev/dbeaver-mcp-server.git"
     },
     "bugs": {
-      "url": "https://github.com/srthkdev/dbeaver-mcp-server/issues"
+        "url": "https://github.com/srthkdev/dbeaver-mcp-server/issues"
     },
     "homepage": "https://github.com/srthkdev/dbeaver-mcp-server#readme"
-  }
+}
