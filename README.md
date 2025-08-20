@@ -14,6 +14,16 @@ A Model Context Protocol (MCP) server that integrates with DBeaver to provide AI
 - **Multiple Export Formats**: CSV, JSON export capabilities
 - **Schema Management**: Complete DDL operations (CREATE, ALTER, DROP)
 - **Safety First**: Built-in query validation and confirmation prompts
+- **Version Compatibility**: Supports both legacy DBeaver (6.x) and modern DBeaver (21.x+) configurations
+
+## 🔧 Version Compatibility
+
+This MCP server automatically detects and supports both DBeaver configuration formats:
+
+- **Legacy DBeaver (6.x)**: Uses XML-based configuration in `.metadata/.plugins/org.jkiss.dbeaver.core/`
+- **Modern DBeaver (21.x+)**: Uses JSON-based configuration in `General/.dbeaver/`
+
+The server will automatically detect your DBeaver version and use the appropriate configuration parser.
 
 ## 🛠️ Available Tools
 
