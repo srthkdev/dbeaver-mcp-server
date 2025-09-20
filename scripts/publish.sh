@@ -48,7 +48,14 @@ echo "🔨 Building project..."
 npm run build
 
 echo "📤 Publishing to npm..."
-npm run publish:$VERSION_TYPE
+# Use the direct npm publish command instead of the npm run publish script to avoid recursion
+if [ "$VERSION_TYPE" = "major" ]; then
+    npm version major && npm publish
+elif [ "$VERSION_TYPE" = "minor" ]; then
+    npm version minor && npm publish
+else
+    npm version patch && npm publish
+fi
 
 echo ""
 echo "🎉 Successfully published dbeaver-mcp-server!"
@@ -56,4 +63,4 @@ echo "📋 Package info:"
 npm info dbeaver-mcp-server version
 echo ""
 echo "🔗 Install with: npm install -g dbeaver-mcp-server@latest"
-echo "🌐 View on npm: https://www.npmjs.com/package/dbeaver-mcp-server" 
+echo "🌐 View on npm: https://www.npmjs.com/package/dbeaver-mcp-server"
