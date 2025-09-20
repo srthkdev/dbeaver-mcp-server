@@ -6,7 +6,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: 'DBeaver MCP Server',
-  tagline: 'MCP server for DBeaver',
+  tagline: 'Universal Database Access for AI Assistants - 200+ Database Types Supported',
   favicon: 'img/favicon.ico',
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
@@ -60,12 +60,21 @@ const config: Config = {
     image: 'img/docusaurus-social-card.jpg',
     navbar: {
       title: 'DBeaver MCP Server',
+      logo: {
+        alt: 'DBeaver MCP Server Logo',
+        src: 'img/logo.svg',
+      },
       items: [
         {
           type: 'docSidebar',
           sidebarId: 'tutorialSidebar',
           position: 'left',
-          label: 'Docs',
+          label: 'Documentation',
+        },
+        {
+          href: 'https://www.npmjs.com/package/dbeaver-mcp-server',
+          label: 'NPM Package',
+          position: 'right',
         },
         {
           href: 'https://github.com/srthkdev/dbeaver-mcp-server',
@@ -78,11 +87,44 @@ const config: Config = {
       style: 'dark',
       links: [
         {
-          title: 'Docs',
+          title: 'Documentation',
           items: [
             {
-              label: 'Introduction',
-              to: '/docs',
+              label: 'Getting Started',
+              to: '/docs/getting-started/installation',
+            },
+            {
+              label: 'Configuration',
+              to: '/docs/getting-started/configuration',
+            },
+            {
+              label: 'Available Tools',
+              to: '/docs/guides/available-tools',
+            },
+            {
+              label: 'Usage Examples',
+              to: '/docs/guides/usage-examples',
+            },
+          ],
+        },
+        {
+          title: 'Resources',
+          items: [
+            {
+              label: 'NPM Package',
+              href: 'https://www.npmjs.com/package/dbeaver-mcp-server',
+            },
+            {
+              label: 'GitHub Repository',
+              href: 'https://github.com/srthkdev/dbeaver-mcp-server',
+            },
+            {
+              label: 'Report Issue',
+              href: 'https://github.com/srthkdev/dbeaver-mcp-server/issues',
+            },
+            {
+              label: 'Troubleshooting',
+              to: '/docs/troubleshooting',
             },
           ],
         },
@@ -90,8 +132,12 @@ const config: Config = {
           title: 'Community',
           items: [
             {
-              label: 'GitHub',
-              href: 'https://github.com/srthkdev/dbeaver-mcp-server',
+              label: 'Contributing',
+              href: 'https://github.com/srthkdev/dbeaver-mcp-server/blob/main/README.md#contributing',
+            },
+            {
+              label: 'License',
+              href: 'https://github.com/srthkdev/dbeaver-mcp-server/blob/main/LICENSE',
             },
           ],
         },

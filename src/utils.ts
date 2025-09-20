@@ -51,7 +51,9 @@ export function findDBeaverExecutable(): string {
   }
 
   // Return fallback (will rely on system PATH)
-  return platform === 'win32' ? 'dbeaver.exe' : 'dbeaver';
+  const fallback = platform === 'win32' ? 'dbeaver.exe' : 'dbeaver';
+  console.warn(`DBeaver executable not found in standard locations. Using fallback: ${fallback}`);
+  return fallback;
 }
 
 /**
