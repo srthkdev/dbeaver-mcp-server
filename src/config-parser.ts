@@ -255,11 +255,18 @@ export class DBeaverConfigParser {
   }
 
   async getConnection(connectionId: string): Promise<DBeaverConnection | null> {
-    const connections = await this.parseConnections();
-    return connections.find(conn => 
-      conn.id === connectionId || 
-      conn.name === connectionId
-    ) || null;
+    try {
+      const connections = await this.parseConnections();
+      return connections.find(conn => 
+        conn.id === connectionId || 
+        conn.name === connectionId
+      ) || null;
+    } catch (error) {
+      if (this.config.debug) {
+        console.error(`Failed to get connection ${connectionId}: ${error}`);
+      }
+      return null;
+    }
   }
 
   async validateConnection(connectionId: string): Promise<boolean> {

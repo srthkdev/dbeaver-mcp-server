@@ -33,7 +33,7 @@ class DBeaverMCPServer {
     this.server = new Server(
       {
         name: 'dbeaver-mcp-server',
-        version: '1.1.0',
+        version: '1.1.3',
       },
       {
         capabilities: {
@@ -1007,7 +1007,8 @@ class DBeaverMCPServer {
     try {
       // Validate DBeaver workspace
       if (!this.configParser.isWorkspaceValid()) {
-        throw new Error('DBeaver workspace not found. Please run DBeaver at least once to create the workspace.');
+        this.log('DBeaver workspace not found. Please run DBeaver at least once to create the workspace.', 'error');
+        this.log('The server will start but will not be able to access any database connections.', 'error');
       }
 
       const transport = new StdioServerTransport();
@@ -1030,7 +1031,7 @@ class DBeaverMCPServer {
 // Handle CLI arguments
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
   console.log(`
-DBeaver MCP Server v1.1.0
+DBeaver MCP Server v1.1.3
 
 Usage: dbeaver-mcp-server [options]
 
@@ -1058,7 +1059,7 @@ For more information, visit: https://github.com/srthkdev/dbeaver-mcp-server
 }
 
 if (process.argv.includes('--version')) {
-  console.log('1.1.0');
+  console.log('1.1.3');
   process.exit(0);
 }
 
