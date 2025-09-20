@@ -6,3 +6,5 @@ scripts/
 tsconfig.json
 *.test.ts
 .env*
+database-mcp/
+dist/
