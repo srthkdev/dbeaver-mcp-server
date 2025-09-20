@@ -29,7 +29,40 @@ export class DBeaverConfigParser {
       '.dbeaver',
       'data-sources.json'
     );
-    return fs.existsSync(newFormatPath);
+    const oldFormatPath = path.join(
+      this.config.workspacePath!,
+      '.metadata',
+      '.plugins',
+      'org.jkiss.dbeaver.core',
+      'connections.xml'
+    );
+    
+    // If new format exists, use it
+    if (fs.existsSync(newFormatPath)) {
+      return true;
+    }
+    
+    // If old format exists, use it
+    if (fs.existsSync(oldFormatPath)) {
+      return false;
+    }
+    
+    // If neither exists, check for new format directory structure
+    const newFormatDir = path.join(this.config.workspacePath!, 'General', '.dbeaver');
+    const oldFormatDir = path.join(this.config.workspacePath!, '.metadata');
+    
+    // Prefer new format if its directory structure exists
+    if (fs.existsSync(newFormatDir)) {
+      return true;
+    }
+    
+    // Default to old format if metadata directory exists
+    if (fs.existsSync(oldFormatDir)) {
+      return false;
+    }
+    
+    // Default to new format for newer DBeaver installations
+    return true;
   }
 
   private getDefaultWorkspacePath(): string {
@@ -88,7 +121,23 @@ export class DBeaverConfigParser {
     const connectionsFile = this.getConnectionsFilePath();
     
     if (!fs.existsSync(connectionsFile)) {
-      throw new Error(`DBeaver connections file not found at: ${connectionsFile}`);
+      // Try the alternative format if the detected format file doesn't exist
+      const alternativeFormat = !this.isNewFormat;
+      const alternativeFile = alternativeFormat 
+        ? path.join(this.config.workspacePath!, 'General', '.dbeaver', 'data-sources.json')
+        : path.join(this.config.workspacePath!, '.metadata', '.plugins', 'org.jkiss.dbeaver.core', 'connections.xml');
+      
+      if (fs.existsSync(alternativeFile)) {
+        // Switch to the alternative format and retry
+        this.isNewFormat = alternativeFormat;
+        return this.parseConnections();
+      }
+      
+      // Neither format exists - return empty array instead of throwing error
+      if (this.config.debug) {
+        console.warn(`No DBeaver connections found. Checked:\n- ${connectionsFile}\n- ${alternativeFile}`);
+      }
+      return [];
     }
 
     try {
