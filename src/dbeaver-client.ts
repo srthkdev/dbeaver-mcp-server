@@ -11,7 +11,7 @@ import {
   ConnectionTest,
   DatabaseStats 
 } from './types.js';
-import { findDBeaverExecutable } from './utils.js';
+import { findDBeaverExecutable, getTestQuery, parseVersionFromResult, buildSchemaQuery, buildListTablesQuery } from './utils.js';
 
 export class DBeaverClient {
   private executablePath: string;
@@ -289,17 +289,14 @@ export class DBeaverClient {
 
   private getTestQuery(driver: string): string {
     // Delegate to utils
-    const { getTestQuery } = require('./utils');
     return getTestQuery(driver);
   }
 
   private extractVersionFromResult(result: any): string | undefined {
-    const { parseVersionFromResult } = require('./utils');
     return parseVersionFromResult(result);
   }
 
   private buildSchemaQuery(driver: string, tableName: string): string {
-    const { buildSchemaQuery } = require('./utils');
     return buildSchemaQuery(driver, tableName);
   }
 
@@ -407,7 +404,6 @@ export class DBeaverClient {
 
   async listTables(connection: DBeaverConnection, schema?: string, includeViews: boolean = false): Promise<any[]> {
     try {
-      const { buildListTablesQuery } = require('./utils');
       const query = buildListTablesQuery(connection.driver, schema, includeViews);
       const result = await this.executeQuery(connection, query);
       
