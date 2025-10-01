@@ -288,7 +288,7 @@ This project is published on npm as `dbeaver-mcp-server`:
 
 - **Package**: [dbeaver-mcp-server](https://www.npmjs.com/package/dbeaver-mcp-server)
 - **Install**: `npm install -g dbeaver-mcp-server`
-- **Current Version**: 1.1.3
+- **Current Version**: 1.1.7
 - **License**: MIT
 - **GitHub**: [srthkdev/dbeaver-mcp-server](https://github.com/srthkdev/dbeaver-mcp-server)
 
