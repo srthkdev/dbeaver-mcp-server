@@ -33,7 +33,7 @@ class DBeaverMCPServer {
     this.server = new Server(
       {
         name: 'dbeaver-mcp-server',
-        version: '1.1.3',
+        version: '1.1.7',
       },
       {
         capabilities: {
@@ -1031,7 +1031,7 @@ class DBeaverMCPServer {
 // Handle CLI arguments
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
   console.log(`
-DBeaver MCP Server v1.1.3
+DBeaver MCP Server v1.1.7
 
 Usage: dbeaver-mcp-server [options]
 
@@ -1059,7 +1059,7 @@ For more information, visit: https://github.com/srthkdev/dbeaver-mcp-server
 }
 
 if (process.argv.includes('--version')) {
-  console.log('1.1.3');
+  console.log('1.1.7');
   process.exit(0);
 }
 

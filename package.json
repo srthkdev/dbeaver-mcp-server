@@ -16,6 +16,10 @@
         "prepublish": "npm run clean && npm run build",
         "watch": "tsc --watch",
         "example": "node examples/example.js",
+        "bump": "bumpp",
+        "bump:patch": "bumpp patch",
+        "bump:minor": "bumpp minor",
+        "bump:major": "bumpp major",
         "publish:patch": "npm version patch && npm publish",
         "publish:minor": "npm version minor && npm publish",
         "publish:major": "npm version major && npm publish",
@@ -49,16 +53,17 @@
     "license": "MIT",
     "dependencies": {
         "@modelcontextprotocol/sdk": "1.9.0",
-        "xml2js": "^0.6.2",
         "csv-parser": "^3.0.0",
-        "csv-stringify": "^6.4.6"
+        "csv-stringify": "^6.4.6",
+        "xml2js": "^0.6.2"
     },
     "devDependencies": {
         "@types/node": "^20.0.0",
         "@types/xml2js": "^0.4.14",
-        "typescript": "^5.8.3",
+        "bumpp": "^10.2.3",
         "rimraf": "^5.0.5",
-        "shx": "^0.4.0"
+        "shx": "^0.4.0",
+        "typescript": "^5.8.3"
     },
     "engines": {
         "node": ">=18.0.0"
