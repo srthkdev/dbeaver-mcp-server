@@ -3,9 +3,14 @@ import path from 'path';
 import os from 'os';
 import { parseString } from 'xml2js';
 import { promisify } from 'util';
+import crypto from 'crypto';
 import { DBeaverConnection, DBeaverConfig } from './types.js';
 
 const parseXML = promisify(parseString);
+
+// DBeaver uses these hardcoded values for password encryption
+const DBEAVER_AES_KEY = Buffer.from('babb4a9f774ab853c96c2d653dfe544a', 'hex');
+const DBEAVER_AES_IV = Buffer.alloc(16, 0);
 
 export class DBeaverConfigParser {
   private config: DBeaverConfig;
@@ -141,11 +146,18 @@ export class DBeaverConfigParser {
     }
 
     try {
+      let connections: DBeaverConnection[] = [];
+      
       if (this.isNewFormat) {
-        return this.parseNewFormatConnections(connectionsFile);
+        connections = await this.parseNewFormatConnections(connectionsFile);
       } else {
-        return this.parseOldFormatConnections(connectionsFile);
+        connections = await this.parseOldFormatConnections(connectionsFile);
       }
+      
+      // Load and merge credentials
+      await this.loadCredentials(connections);
+      
+      return connections;
     } catch (error) {
       throw new Error(`Failed to parse DBeaver connections: ${error}`);
     }
@@ -354,10 +366,92 @@ export class DBeaverConfigParser {
       workspacePath: this.config.workspacePath,
       connectionsFile: this.getConnectionsFilePath(),
       connectionsFileExists: fs.existsSync(this.getConnectionsFilePath()),
+      credentialsFile: this.getCredentialsFilePath(),
+      credentialsFileExists: fs.existsSync(this.getCredentialsFilePath()),
       workspaceValid: this.isWorkspaceValid(),
       isNewFormat: this.isNewFormat,
       platform: os.platform(),
       nodeVersion: process.version
     };
+  }
+
+  /**
+   * Load and decrypt credentials from DBeaver's credentials-config.json
+   */
+  private async loadCredentials(connections: DBeaverConnection[]): Promise<void> {
+    const credentialsFile = this.getCredentialsFilePath();
+    
+    if (!fs.existsSync(credentialsFile)) {
+      if (this.config.debug) {
+        console.warn(`Credentials file not found: ${credentialsFile}`);
+      }
+      return;
+    }
+    
+    try {
+      const encryptedData = fs.readFileSync(credentialsFile);
+      const decryptedData = this.decryptCredentials(encryptedData);
+      const credentials = JSON.parse(decryptedData);
+      
+      // Merge credentials into connections
+      for (const connection of connections) {
+        const connId = connection.id;
+        
+        // Look for credentials in the decrypted data
+        if (credentials[connId]) {
+          const connCreds = credentials[connId];
+          
+          // Extract credentials from the nested structure
+          if (connCreds['#connection']) {
+            const creds = connCreds['#connection'];
+            
+            if (creds.user) {
+              connection.user = creds.user;
+              if (!connection.properties) {
+                connection.properties = {};
+              }
+              connection.properties.user = creds.user;
+            }
+            
+            if (creds.password) {
+              if (!connection.properties) {
+                connection.properties = {};
+              }
+              connection.properties.password = creds.password;
+            }
+          }
+        }
+      }
+      
+      if (this.config.debug) {
+        console.error(`Successfully loaded credentials for ${connections.length} connections`);
+      }
+    } catch (error) {
+      if (this.config.debug) {
+        console.error(`Failed to load credentials: ${error}`);
+      }
+      // Don't throw - continue without credentials
+    }
+  }
+
+  /**
+   * Decrypt DBeaver credentials using AES-128-CBC
+   * DBeaver uses a hardcoded key and IV for encryption
+   */
+  private decryptCredentials(encryptedData: Buffer): string {
+    try {
+      // Create decipher with DBeaver's hardcoded key and IV
+      const decipher = crypto.createDecipheriv('aes-128-cbc', DBEAVER_AES_KEY, DBEAVER_AES_IV);
+      decipher.setAutoPadding(true);
+
+      // Decrypt entire file, then drop the 16-byte header from the decrypted output
+      let decrypted = decipher.update(encryptedData);
+      decrypted = Buffer.concat([decrypted, decipher.final()]);
+
+      const withoutHeader = decrypted.slice(16);
+      return withoutHeader.toString('utf8');
+    } catch (error) {
+      throw new Error(`Failed to decrypt credentials: ${error}`);
+    }
   }
 }
