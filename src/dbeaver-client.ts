@@ -195,7 +195,17 @@ export class DBeaverClient {
         // ignore errors, we'll set a reasonable default below
       }
       const hasCa = typeof sslObj.ca === 'string' && sslObj.ca.length > 0;
-      sslObj.rejectUnauthorized = verifyModes.includes(sslMode) ? !!hasCa : false;
+      if (verifyModes.includes(sslMode)) {
+        // Enforce certificate verification. If no custom CA is provided, fallback to system trust store.
+        sslObj.rejectUnauthorized = true;
+        if (this.debug && !hasCa) {
+          // eslint-disable-next-line no-console
+          console.warn('sslMode set to verify-ca/verify-full but no sslrootcert provided; using system CA store');
+        }
+      } else {
+        // "require" mode: encrypt without verification
+        sslObj.rejectUnauthorized = false;
+      }
       ssl = sslObj;
     } else if (disableSsl) {
       ssl = false;
