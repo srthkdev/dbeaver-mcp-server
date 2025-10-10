@@ -17,6 +17,13 @@ import { validateQuery, sanitizeConnectionId, formatError, convertToCSV } from '
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get version from package.json
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+const VERSION = packageJson.version;
 
 class DBeaverMCPServer {
   private server: Server;
@@ -33,7 +40,7 @@ class DBeaverMCPServer {
     this.server = new Server(
       {
         name: 'dbeaver-mcp-server',
-        version: '1.1.7',
+        version: VERSION,
       },
       {
         capabilities: {
@@ -1030,8 +1037,8 @@ class DBeaverMCPServer {
 
 // Handle CLI arguments
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
-  console.log(`
-DBeaver MCP Server v1.1.7
+  console.error(`
+DBeaver MCP Server v${VERSION}
 
 Usage: dbeaver-mcp-server [options]
 
@@ -1059,7 +1066,7 @@ For more information, visit: https://github.com/srthkdev/dbeaver-mcp-server
 }
 
 if (process.argv.includes('--version')) {
-  console.log('1.1.7');
+  console.error(VERSION);
   process.exit(0);
 }
 

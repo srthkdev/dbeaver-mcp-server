@@ -58,6 +58,39 @@ dbeaver-mcp-server
 - Restart DBeaver after making configuration changes
 
 ### Connection Authentication
+
+#### Password Authentication Issues
+If you're experiencing authentication failures even though connections work in DBeaver, this is now fixed in version 1.1.8+. The server properly loads and decrypts credentials from DBeaver's credential store.
+
+**How it works:**
+- DBeaver stores passwords encrypted in `credentials-config.json`
+- The MCP server automatically decrypts and uses these credentials
+- Passwords are loaded from: `~/.local/share/DBeaverData/workspace6/General/.dbeaver/credentials-config.json` (Linux) or equivalent path on other platforms
+
+**Troubleshooting:**
+1. Ensure your connections are saved with passwords in DBeaver
+2. Test connections in DBeaver GUI first to verify they work
+3. The MCP server will automatically detect and use stored credentials
+4. Enable debug mode to see credential loading logs:
+   ```bash
+   DBEAVER_DEBUG=true dbeaver-mcp-server
+   ```
+
+**Common Issues:**
+- **Empty password field**: Make sure you saved the password in DBeaver (check "Save password" when creating connection)
+- **SSL/TLS requirements**: The server now properly handles SSL settings from DBeaver
+- **Connection properties**: All connection properties including host, port, database name are loaded from DBeaver
+
+**Manual credential check:**
+```bash
+# On Linux/macOS - view decrypted credentials
+openssl aes-128-cbc -d \
+  -K babb4a9f774ab853c96c2d653dfe544a \
+  -iv 00000000000000000000000000000000 \
+  -in ~/.local/share/DBeaverData/workspace6/General/.dbeaver/credentials-config.json | \
+  dd bs=1 skip=16 2>/dev/null | jq
+```
+
 - Verify connection credentials haven't expired
 - Check if database server is accessible
 - Ensure firewall settings allow database connections

@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import csv from 'csv-parser';
+import { Client } from 'pg';
 import { 
   DBeaverConnection, 
   QueryResult, 
@@ -117,7 +118,8 @@ export class DBeaverClient {
     } else if (driver.includes('postgres')) {
       return this.executePostgreSQLQuery(connection, query);
     } else {
-      throw new Error(`Unsupported database driver: ${driver}`);
+      // For unsupported drivers, return a helpful error instead of crashing
+      throw new Error(`Database driver "${driver}" is not yet supported for direct query execution. Supported drivers: SQLite, PostgreSQL. Please use DBeaver GUI for this connection type.`);
     }
   }
 
@@ -166,57 +168,59 @@ export class DBeaverClient {
   }
 
   private async executePostgreSQLQuery(connection: DBeaverConnection, query: string): Promise<QueryResult> {
-    return new Promise((resolve, reject) => {
-      const host = connection.host || 'localhost';
-      const port = connection.port || 5432;
-      const database = connection.database || 'postgres';
-      const user = connection.user || process.env.PGUSER || 'postgres';
-      
-      const args = [
-        '-h', host,
-        '-p', port.toString(),
-        '-d', database,
-        '-U', user,
-        '-t', '-A', '-F', ','
-      ];
-      
-      const proc = spawn('psql', args, { stdio: ['pipe', 'pipe', 'pipe'] }) as any;
-      
-      let output = '';
-      let error = '';
-      
-      proc.stdout.on('data', (data: any) => {
-        output += data.toString();
-      });
-      
-      proc.stderr.on('data', (data: any) => {
-        error += data.toString();
-      });
-      
-      proc.on('close', (code: any) => {
-        if (code !== 0) {
-          reject(new Error(`PostgreSQL error: ${error}`));
-          return;
+    const host = connection.host || connection.properties?.host || 'localhost';
+    const port = connection.port || (connection.properties?.port ? parseInt(connection.properties.port) : 5432);
+    const database = connection.database || connection.properties?.database || 'postgres';
+    const user = connection.user || connection.properties?.user || process.env.PGUSER || 'postgres';
+    const password = connection.properties?.password || process.env.PGPASSWORD;
+
+    // SSL handling
+    const sslModeRaw = connection.properties?.['ssl.mode'] || connection.properties?.['sslmode'] || connection.properties?.['ssl'];
+    const sslMode = String(sslModeRaw ?? '').toLowerCase();
+    const sslRootCert = connection.properties?.['sslrootcert'] || connection.properties?.['ssl.root.cert'] || connection.properties?.['sslRootCert'];
+    const sslCert = connection.properties?.['sslcert'] || connection.properties?.['ssl.cert'] || connection.properties?.['sslCert'];
+    const sslKey = connection.properties?.['sslkey'] || connection.properties?.['ssl.key'] || connection.properties?.['sslKey'];
+
+    let ssl: any = undefined;
+    const requireSsl = ['require', 'verify-ca', 'verify-full', 'true', '1'].includes(sslMode);
+    const verifyModes = ['verify-ca', 'verify-full'];
+    const disableSsl = ['disable', 'false', '0'].includes(sslMode);
+    if (requireSsl) {
+      const sslObj: any = {};
+      try {
+        if (sslRootCert && fs.existsSync(String(sslRootCert))) sslObj.ca = fs.readFileSync(String(sslRootCert)).toString();
+        if (sslCert && fs.existsSync(String(sslCert))) sslObj.cert = fs.readFileSync(String(sslCert)).toString();
+        if (sslKey && fs.existsSync(String(sslKey))) sslObj.key = fs.readFileSync(String(sslKey)).toString();
+      } catch (e) {
+        // ignore errors, we'll set a reasonable default below
+      }
+      const hasCa = typeof sslObj.ca === 'string' && sslObj.ca.length > 0;
+      if (verifyModes.includes(sslMode)) {
+        // Enforce certificate verification. If no custom CA is provided, fallback to system trust store.
+        sslObj.rejectUnauthorized = true;
+        if (this.debug && !hasCa) {
+          // eslint-disable-next-line no-console
+          console.warn('sslMode set to verify-ca/verify-full but no sslrootcert provided; using system CA store');
         }
-        
-        const lines = output.trim().split('\n');
-        if (lines.length === 0) {
-          resolve({ columns: [], rows: [], rowCount: 0, executionTime: 0 });
-          return;
-        }
-        
-        // For PostgreSQL, we need to get column names differently
-        // This is a simplified approach - in production you'd want to use DESCRIBE or similar
-        const firstRow = lines[0].split(',');
-        const columns = firstRow.map((_, i) => `column_${i + 1}`);
-        const rows = lines.map(line => line.split(','));
-        
-        resolve({ columns, rows, rowCount: rows.length, executionTime: 0 });
-      });
-      
-      proc.stdin.write(query);
-      proc.stdin.end();
-    });
+      } else {
+        // "require" mode: encrypt without verification
+        sslObj.rejectUnauthorized = false;
+      }
+      ssl = sslObj;
+    } else if (disableSsl) {
+      ssl = false;
+    }
+
+    const client = new Client({ host, port, database, user, password, ssl });
+    try {
+      await client.connect();
+      const res = await client.query(query);
+      const columns: string[] = (res.fields || []).map((f: any) => f.name as string);
+      const rows: any[][] = (res.rows || []).map((r: any) => columns.map((c: string) => r[c]));
+      return { columns, rows, rowCount: typeof res.rowCount === 'number' ? res.rowCount : rows.length, executionTime: 0 };
+    } finally {
+      try { await client.end(); } catch {}
+    }
   }
 
   private async executeDBeaver(args: string[]): Promise<void> {
@@ -419,6 +423,7 @@ export class DBeaverClient {
       if (this.debug) {
         console.error(`Failed to list tables: ${error}`);
       }
+      // Return empty array instead of crashing
       return [];
     }
   }
