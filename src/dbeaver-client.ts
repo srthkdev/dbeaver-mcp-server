@@ -219,7 +219,16 @@ export class DBeaverClient {
       const rows: any[][] = (res.rows || []).map((r: any) => columns.map((c: string) => r[c]));
       return { columns, rows, rowCount: typeof res.rowCount === 'number' ? res.rowCount : rows.length, executionTime: 0 };
     } finally {
-      try { await client.end(); } catch {}
+      try {
+        await client.end();
+      } catch (closeError) {
+        // ALWAYS log connection cleanup failures - they indicate resource leaks
+        console.error('Failed to close PostgreSQL connection:', {
+          error: closeError instanceof Error ? closeError.message : String(closeError),
+          host,
+          database
+        });
+      }
     }
   }
 
