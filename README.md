@@ -8,6 +8,10 @@ A production-ready Model Context Protocol (MCP) server that seamlessly integrate
 [![Downloads](https://img.shields.io/npm/dm/dbeaver-mcp-server.svg)](https://www.npmjs.com/package/dbeaver-mcp-server)
 [![GitHub stars](https://img.shields.io/github/stars/srthkdev/dbeaver-mcp-server.svg)](https://github.com/srthkdev/dbeaver-mcp-server)
 
+<a href="https://glama.ai/mcp/servers/@srthkdev/dbeaver-mcp-server">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@srthkdev/dbeaver-mcp-server/badge" alt="DBeaver Server MCP server" />
+</a>
+
 ## 🚀 Key Features
 
 ### 🔗 Universal Database Connectivity
@@ -302,5 +306,3 @@ MIT License - see LICENSE file for details
 - The open source community for inspiration and feedback
 
 > **Note**: This project is not officially affiliated with DBeaver or Anthropic. It's designed for real-world production use with AI assistants.
-
-
