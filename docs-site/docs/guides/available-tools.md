@@ -38,6 +38,7 @@ The DBeaver MCP Server provides 14 powerful tools organized into four categories
 ### `execute_query`
 **Description**: Execute SELECT queries (read-only)  
 **Safety Level**: ✅ Safe  
+**Notes**: Queries are executed natively for SQLite, PostgreSQL, and MySQL/MySQL8. Other drivers may fall back to DBeaver headless mode (set `DBEAVER_PATH` if needed).  
 **Parameters**:
 - `connectionId` (required): The ID or name of the DBeaver connection
 - `query` (required): The SQL query to execute (SELECT statements only)

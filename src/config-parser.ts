@@ -17,10 +17,12 @@ export class DBeaverConfigParser {
   private isNewFormat: boolean = false;
 
   constructor(config: DBeaverConfig = {}) {
+    const workspacePath = config.workspacePath ?? this.getDefaultWorkspacePath();
+    const debug = config.debug ?? false;
     this.config = {
-      workspacePath: config.workspacePath || this.getDefaultWorkspacePath(),
-      debug: config.debug || false,
-      ...config
+      ...config,
+      workspacePath,
+      debug
     };
     
     // Detect if we're using the new DBeaver format

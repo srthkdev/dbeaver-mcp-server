@@ -43,6 +43,7 @@ To use DBeaver MCP Server with Claude Desktop, add the following to your configu
 
 ### Core Variables
 - `DBEAVER_PATH`: Set a custom path to the DBeaver executable if not auto-detected
+- `DBEAVER_WORKSPACE`: Set a custom path to your DBeaver workspace (useful for non-default workspaces and DBeaver CLI execution)
 - `DBEAVER_TIMEOUT`: Set the query timeout in milliseconds (default: 30000)
 - `DBEAVER_DEBUG`: Set to `true` to enable debug logging
 

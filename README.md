@@ -33,6 +33,7 @@ A production-ready Model Context Protocol (MCP) server that seamlessly integrate
 - **Schema Management**: Complete DDL operations (CREATE, ALTER, DROP)
 - **Data Export**: CSV, JSON, XML, Excel export formats
 - **Performance Monitoring**: Query execution time tracking
+- **Native Execution**: Direct query support for SQLite, PostgreSQL, and MySQL/MySQL8
 
 ### 🧠 AI-Powered Intelligence
 - **Business Insights**: Track and store analysis insights with tagging
@@ -92,6 +93,7 @@ The server will automatically detect your DBeaver version and use the appropriat
 - Node.js 18+ 
 - DBeaver installed and configured with at least one connection
 - Claude Desktop, Cursor, or another MCP-compatible client
+- For MySQL (including MySQL 8) and most other databases, query execution uses the DBeaver executable in headless mode (set `DBEAVER_PATH` if auto-detection fails)
 
 ## 🛠️ Installation
 
@@ -133,6 +135,7 @@ npm link  # Makes the command available globally
 
 ### Environment Variables
 - `DBEAVER_PATH`: Path to DBeaver executable (auto-detected if not set)
+- `DBEAVER_WORKSPACE`: Path to DBeaver workspace directory (defaults to the standard OS location, e.g. `~/Library/DBeaverData/workspace6` on macOS)
 - `DBEAVER_TIMEOUT`: Query timeout in milliseconds (default: 30000)
 - `DBEAVER_DEBUG`: Enable debug logging (true/false)
 
