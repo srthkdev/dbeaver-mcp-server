@@ -36,7 +36,7 @@ class DBeaverMCPServer {
   constructor() {
     this.debug = process.env.DBEAVER_DEBUG === 'true';
     this.insightsFile = path.join(os.tmpdir(), 'dbeaver-mcp-insights.json');
-    
+
     this.server = new Server(
       {
         name: 'dbeaver-mcp-server',
@@ -70,10 +70,10 @@ class DBeaverMCPServer {
 
   private log(message: string, level: 'info' | 'error' | 'debug' = 'info') {
     if (level === 'debug' && !this.debug) return;
-    
+
     const timestamp = new Date().toISOString();
     const prefix = `[${timestamp}] [${level.toUpperCase()}]`;
-    
+
     if (level === 'error') {
       console.error(`${prefix} ${message}`);
     } else {
@@ -128,7 +128,7 @@ class DBeaverMCPServer {
         for (const connection of connections) {
           try {
             const tables = await this.dbeaverClient.listTables(connection, undefined, false);
-            
+
             for (const table of tables) {
               const tableName = typeof table === 'string' ? table : table.name || table.table_name;
               if (tableName) {
@@ -157,7 +157,7 @@ class DBeaverMCPServer {
       try {
         const uri = new URL(request.params.uri);
         const pathParts = uri.pathname.split('/').filter(p => p);
-        
+
         if (pathParts.length < 2 || pathParts[pathParts.length - 1] !== 'schema') {
           throw new Error("Invalid resource URI format");
         }
@@ -473,101 +473,101 @@ class DBeaverMCPServer {
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
-      
+
       try {
         this.log(`Executing tool: ${name} with args: ${JSON.stringify(args)}`, 'debug');
-        
+
         switch (name) {
           case 'list_connections':
             return await this.handleListConnections(args as { includeDetails?: boolean });
-            
+
           case 'get_connection_info':
             return await this.handleGetConnectionInfo(args as { connectionId: string });
-            
+
           case 'execute_query':
-            return await this.handleExecuteQuery(args as { 
-              connectionId: string; 
-              query: string; 
-              maxRows?: number 
+            return await this.handleExecuteQuery(args as {
+              connectionId: string;
+              query: string;
+              maxRows?: number
             });
 
           case 'write_query':
-            return await this.handleWriteQuery(args as { 
-              connectionId: string; 
-              query: string; 
+            return await this.handleWriteQuery(args as {
+              connectionId: string;
+              query: string;
             });
 
           case 'create_table':
-            return await this.handleCreateTable(args as { 
-              connectionId: string; 
-              query: string; 
+            return await this.handleCreateTable(args as {
+              connectionId: string;
+              query: string;
             });
 
           case 'alter_table':
-            return await this.handleAlterTable(args as { 
-              connectionId: string; 
-              query: string; 
+            return await this.handleAlterTable(args as {
+              connectionId: string;
+              query: string;
             });
 
           case 'drop_table':
-            return await this.handleDropTable(args as { 
-              connectionId: string; 
-              tableName: string; 
-              confirm: boolean 
+            return await this.handleDropTable(args as {
+              connectionId: string;
+              tableName: string;
+              confirm: boolean
             });
-            
+
           case 'get_table_schema':
-            return await this.handleGetTableSchema(args as { 
-              connectionId: string; 
-              tableName: string; 
-              includeIndexes?: boolean 
+            return await this.handleGetTableSchema(args as {
+              connectionId: string;
+              tableName: string;
+              includeIndexes?: boolean
             });
-            
+
           case 'export_data':
-            return await this.handleExportData(args as { 
-              connectionId: string; 
-              query: string; 
-              format?: string; 
-              includeHeaders?: boolean; 
-              maxRows?: number 
+            return await this.handleExportData(args as {
+              connectionId: string;
+              query: string;
+              format?: string;
+              includeHeaders?: boolean;
+              maxRows?: number
             });
-            
+
           case 'test_connection':
             return await this.handleTestConnection(args as { connectionId: string });
-            
+
           case 'get_database_stats':
             return await this.handleGetDatabaseStats(args as { connectionId: string });
-            
+
           case 'list_tables':
-            return await this.handleListTables(args as { 
-              connectionId: string; 
-              schema?: string; 
-              includeViews?: boolean 
+            return await this.handleListTables(args as {
+              connectionId: string;
+              schema?: string;
+              includeViews?: boolean
             });
 
           case 'append_insight':
-            return await this.handleAppendInsight(args as { 
-              insight: string; 
-              connection?: string; 
-              tags?: string[] 
+            return await this.handleAppendInsight(args as {
+              insight: string;
+              connection?: string;
+              tags?: string[]
             });
 
           case 'list_insights':
-            return await this.handleListInsights(args as { 
-              connection?: string; 
-              tags?: string[] 
+            return await this.handleListInsights(args as {
+              connection?: string;
+              tags?: string[]
             });
-            
+
           default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
         }
       } catch (error: any) {
         this.log(`Tool execution failed: ${error}`, 'error');
-        
+
         if (error instanceof McpError) {
           throw error;
         }
-        
+
         throw new McpError(
           ErrorCode.InternalError,
           `Tool execution failed: ${formatError(error)}`
@@ -578,7 +578,7 @@ class DBeaverMCPServer {
 
   private async handleListConnections(args: { includeDetails?: boolean }) {
     const connections = await this.configParser.parseConnections();
-    
+
     if (args.includeDetails) {
       return {
         content: [{
@@ -587,7 +587,7 @@ class DBeaverMCPServer {
         }],
       };
     }
-    
+
     const simplified = connections.map(conn => ({
       id: conn.id,
       name: conn.name,
@@ -596,7 +596,7 @@ class DBeaverMCPServer {
       database: conn.database,
       folder: conn.folder
     }));
-    
+
     return {
       content: [{
         type: 'text' as const,
@@ -608,11 +608,11 @@ class DBeaverMCPServer {
   private async handleGetConnectionInfo(args: { connectionId: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const connection = await this.configParser.getConnection(connectionId);
-    
+
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
-    
+
     return {
       content: [{
         type: 'text' as const,
@@ -621,35 +621,49 @@ class DBeaverMCPServer {
     };
   }
 
-  private async handleExecuteQuery(args: { 
-    connectionId: string; 
-    query: string; 
-    maxRows?: number 
+  private async handleExecuteQuery(args: {
+    connectionId: string;
+    query: string;
+    maxRows?: number
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
     const maxRows = args.maxRows || 1000;
-    
+
     // Validate query
     const validationError = validateQuery(query);
     if (validationError) {
       throw new McpError(ErrorCode.InvalidParams, validationError);
     }
-    
+
     const connection = await this.configParser.getConnection(connectionId);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
-    
-    // Add LIMIT clause if not present and it's a SELECT query
+
+    // Add LIMIT/TOP clause if not present and it's a SELECT query
     let finalQuery = query;
-    if (query.toLowerCase().trimStart().startsWith('select') && 
-        !query.toLowerCase().includes('limit')) {
-      finalQuery = `${query} LIMIT ${maxRows}`;
+    const lowerQuery = query.toLowerCase().trimStart();
+
+    if (lowerQuery.startsWith('select')) {
+      const driver = connection.driver.toLowerCase();
+      const isSqlServer = driver.includes('mssql') || driver.includes('sqlserver') || driver.includes('microsoft');
+
+      if (isSqlServer) {
+        if (!lowerQuery.includes('top ') && !lowerQuery.includes('offset ') && !lowerQuery.includes('fetch next')) {
+          // Simple injection of TOP for SQL Server
+          // This is a naive implementation, but covers basic cases
+          finalQuery = query.replace(/^select/i, `SELECT TOP ${maxRows}`);
+        }
+      } else {
+        if (!lowerQuery.includes('limit')) {
+          finalQuery = `${query} LIMIT ${maxRows}`;
+        }
+      }
     }
-    
+
     const result = await this.dbeaverClient.executeQuery(connection, finalQuery);
-    
+
     const response = {
       query: finalQuery,
       connection: connection.name,
@@ -659,7 +673,7 @@ class DBeaverMCPServer {
       rows: result.rows,
       truncated: result.rows.length >= maxRows
     };
-    
+
     return {
       content: [{
         type: 'text' as const,
@@ -671,13 +685,13 @@ class DBeaverMCPServer {
   private async handleWriteQuery(args: { connectionId: string; query: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
-    
+
     // Validate query type
     const lowerQuery = query.toLowerCase();
     if (lowerQuery.startsWith('select')) {
       throw new McpError(ErrorCode.InvalidParams, 'Use execute_query for SELECT operations');
     }
-    
+
     if (!(lowerQuery.startsWith('insert') || lowerQuery.startsWith('update') || lowerQuery.startsWith('delete'))) {
       throw new McpError(ErrorCode.InvalidParams, 'Only INSERT, UPDATE, or DELETE operations are allowed with write_query');
     }
@@ -687,14 +701,14 @@ class DBeaverMCPServer {
     if (validationError) {
       throw new McpError(ErrorCode.InvalidParams, validationError);
     }
-    
+
     const connection = await this.configParser.getConnection(connectionId);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
-    
+
     const result = await this.dbeaverClient.executeQuery(connection, query);
-    
+
     const response = {
       query: query,
       connection: connection.name,
@@ -702,7 +716,7 @@ class DBeaverMCPServer {
       affectedRows: result.rowCount,
       success: true
     };
-    
+
     return {
       content: [{
         type: 'text' as const,
@@ -714,25 +728,25 @@ class DBeaverMCPServer {
   private async handleCreateTable(args: { connectionId: string; query: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
-    
+
     if (!query.toLowerCase().startsWith('create table')) {
       throw new McpError(ErrorCode.InvalidParams, 'Only CREATE TABLE statements are allowed');
     }
-    
+
     const connection = await this.configParser.getConnection(connectionId);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
-    
+
     const result = await this.dbeaverClient.executeQuery(connection, query);
-    
+
     return {
       content: [{
         type: 'text' as const,
-        text: JSON.stringify({ 
-          success: true, 
+        text: JSON.stringify({
+          success: true,
           message: 'Table created successfully',
-          executionTime: result.executionTime 
+          executionTime: result.executionTime
         }, null, 2),
       }],
     };
@@ -741,25 +755,25 @@ class DBeaverMCPServer {
   private async handleAlterTable(args: { connectionId: string; query: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
-    
+
     if (!query.toLowerCase().startsWith('alter table')) {
       throw new McpError(ErrorCode.InvalidParams, 'Only ALTER TABLE statements are allowed');
     }
-    
+
     const connection = await this.configParser.getConnection(connectionId);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
-    
+
     const result = await this.dbeaverClient.executeQuery(connection, query);
-    
+
     return {
       content: [{
         type: 'text' as const,
-        text: JSON.stringify({ 
-          success: true, 
+        text: JSON.stringify({
+          success: true,
           message: 'Table altered successfully',
-          executionTime: result.executionTime 
+          executionTime: result.executionTime
         }, null, 2),
       }],
     };
@@ -768,68 +782,68 @@ class DBeaverMCPServer {
   private async handleDropTable(args: { connectionId: string; tableName: string; confirm: boolean }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const tableName = args.tableName;
-    
+
     if (!tableName) {
       throw new McpError(ErrorCode.InvalidParams, 'Table name is required');
     }
-    
+
     if (!args.confirm) {
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify({ 
-            success: false, 
-            message: 'Safety confirmation required. Set confirm=true to proceed with dropping the table.' 
+          text: JSON.stringify({
+            success: false,
+            message: 'Safety confirmation required. Set confirm=true to proceed with dropping the table.'
           }, null, 2),
         }],
       };
     }
-    
+
     const connection = await this.configParser.getConnection(connectionId);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
-    
+
     // Check if table exists first
     try {
       await this.dbeaverClient.getTableSchema(connection, tableName);
     } catch (error) {
       throw new McpError(ErrorCode.InvalidParams, `Table '${tableName}' does not exist or cannot be accessed`);
     }
-    
+
     const dropQuery = `DROP TABLE "${tableName}"`;
     const result = await this.dbeaverClient.executeQuery(connection, dropQuery);
-    
+
     return {
       content: [{
         type: 'text' as const,
-        text: JSON.stringify({ 
-          success: true, 
+        text: JSON.stringify({
+          success: true,
           message: `Table '${tableName}' dropped successfully`,
-          executionTime: result.executionTime 
+          executionTime: result.executionTime
         }, null, 2),
       }],
     };
   }
 
-  private async handleGetTableSchema(args: { 
-    connectionId: string; 
-    tableName: string; 
-    includeIndexes?: boolean 
+  private async handleGetTableSchema(args: {
+    connectionId: string;
+    tableName: string;
+    includeIndexes?: boolean
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const connection = await this.configParser.getConnection(connectionId);
-    
+
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
-    
+
     const schema = await this.dbeaverClient.getTableSchema(connection, args.tableName);
-    
+
     if (!args.includeIndexes) {
       (schema as any).indexes = undefined;
     }
-    
+
     return {
       content: [{
         type: 'text' as const,
@@ -838,37 +852,37 @@ class DBeaverMCPServer {
     };
   }
 
-  private async handleExportData(args: { 
-    connectionId: string; 
-    query: string; 
-    format?: string; 
-    includeHeaders?: boolean; 
-    maxRows?: number 
+  private async handleExportData(args: {
+    connectionId: string;
+    query: string;
+    format?: string;
+    includeHeaders?: boolean;
+    maxRows?: number
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
-    
+
     // Validate query - only SELECT queries for export
     if (!query.toLowerCase().trimStart().startsWith('select')) {
       throw new McpError(ErrorCode.InvalidParams, 'Only SELECT queries are allowed for export');
     }
-    
+
     const connection = await this.configParser.getConnection(connectionId);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
-    
+
     const maxRows = args.maxRows || 10000;
     const format = args.format || 'csv';
-    
+
     // Add LIMIT clause if not present
     let finalQuery = query;
     if (!query.toLowerCase().includes('limit')) {
       finalQuery = `${query} LIMIT ${maxRows}`;
     }
-    
+
     const result = await this.dbeaverClient.executeQuery(connection, finalQuery);
-    
+
     if (format === 'csv') {
       const csvData = convertToCSV(result.columns, result.rows);
       return {
@@ -885,7 +899,7 @@ class DBeaverMCPServer {
         });
         return obj;
       });
-      
+
       return {
         content: [{
           type: 'text' as const,
@@ -900,13 +914,13 @@ class DBeaverMCPServer {
   private async handleTestConnection(args: { connectionId: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const connection = await this.configParser.getConnection(connectionId);
-    
+
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
-    
+
     const testResult = await this.dbeaverClient.testConnection(connection);
-    
+
     return {
       content: [{
         type: 'text' as const,
@@ -918,13 +932,13 @@ class DBeaverMCPServer {
   private async handleGetDatabaseStats(args: { connectionId: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const connection = await this.configParser.getConnection(connectionId);
-    
+
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
-    
+
     const stats = await this.dbeaverClient.getDatabaseStats(connection);
-    
+
     return {
       content: [{
         type: 'text' as const,
@@ -933,24 +947,24 @@ class DBeaverMCPServer {
     };
   }
 
-  private async handleListTables(args: { 
-    connectionId: string; 
-    schema?: string; 
-    includeViews?: boolean 
+  private async handleListTables(args: {
+    connectionId: string;
+    schema?: string;
+    includeViews?: boolean
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const connection = await this.configParser.getConnection(connectionId);
-    
+
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
-    
+
     const tables = await this.dbeaverClient.listTables(
-      connection, 
-      args.schema, 
+      connection,
+      args.schema,
       args.includeViews || false
     );
-    
+
     return {
       content: [{
         type: 'text' as const,
@@ -978,10 +992,10 @@ class DBeaverMCPServer {
     return {
       content: [{
         type: 'text' as const,
-        text: JSON.stringify({ 
-          success: true, 
+        text: JSON.stringify({
+          success: true,
           message: 'Insight added successfully',
-          id: newInsight.id 
+          id: newInsight.id
         }, null, 2),
       }],
     };
@@ -991,13 +1005,13 @@ class DBeaverMCPServer {
     let filteredInsights = [...this.insights];
 
     if (args.connection) {
-      filteredInsights = filteredInsights.filter(insight => 
+      filteredInsights = filteredInsights.filter(insight =>
         insight.connection === args.connection
       );
     }
 
     if (args.tags && args.tags.length > 0) {
-      filteredInsights = filteredInsights.filter(insight => 
+      filteredInsights = filteredInsights.filter(insight =>
         insight.tags && args.tags!.some(tag => insight.tags!.includes(tag))
       );
     }
@@ -1020,14 +1034,14 @@ class DBeaverMCPServer {
 
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
-      
+
       this.log('DBeaver MCP server started successfully');
-      
+
       if (this.debug) {
         const debugInfo = this.configParser.getDebugInfo();
         this.log(`Debug info: ${JSON.stringify(debugInfo, null, 2)}`, 'debug');
       }
-      
+
     } catch (error) {
       this.log(`Failed to start server: ${formatError(error)}`, 'error');
       process.exit(1);
