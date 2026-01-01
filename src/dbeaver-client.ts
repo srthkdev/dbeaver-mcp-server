@@ -4,6 +4,7 @@ import path from 'path';
 import os from 'os';
 import csv from 'csv-parser';
 import { Client } from 'pg';
+import sql from 'mssql';
 import { 
   DBeaverConnection, 
   QueryResult, 
@@ -117,9 +118,11 @@ export class DBeaverClient {
       return this.executeSQLiteQuery(connection, query);
     } else if (driver.includes('postgres')) {
       return this.executePostgreSQLQuery(connection, query);
+    } else if (driver.includes('azure') || driver.includes('mssql') || driver.includes('sqlserver')) {
+      return this.executeMSSQLQuery(connection, query);
     } else {
       // For unsupported drivers, return a helpful error instead of crashing
-      throw new Error(`Database driver "${driver}" is not yet supported for direct query execution. Supported drivers: SQLite, PostgreSQL. Please use DBeaver GUI for this connection type.`);
+      throw new Error(`Database driver "${driver}" is not yet supported for direct query execution. Supported drivers: SQLite, PostgreSQL, Azure SQL, SQL Server. Please use DBeaver GUI for this connection type.`);
     }
   }
 
@@ -200,7 +203,7 @@ export class DBeaverClient {
         sslObj.rejectUnauthorized = true;
         if (this.debug && !hasCa) {
           // eslint-disable-next-line no-console
-          console.warn('sslMode set to verify-ca/verify-full but no sslrootcert provided; using system CA store');
+          console.error('sslMode set to verify-ca/verify-full but no sslrootcert provided; using system CA store');
         }
       } else {
         // "require" mode: encrypt without verification
@@ -229,6 +232,69 @@ export class DBeaverClient {
           database
         });
       }
+    }
+  }
+
+  private async executeMSSQLQuery(connection: DBeaverConnection, query: string): Promise<QueryResult> {
+    const host = connection.host || connection.properties?.host || 'localhost';
+    const port = connection.port || (connection.properties?.port ? parseInt(connection.properties.port) : 1433);
+    const database = connection.database || connection.properties?.database || 'master';
+    const user = connection.user || connection.properties?.user || process.env.SQLUSER || 'sa';
+    const password = connection.properties?.password || process.env.SQLPASSWORD;
+    
+    // Build connection config for mssql
+    const config: sql.config = {
+      server: host,
+      port: port,
+      database: database,
+      user: user,
+      password: password || '',
+      options: {
+        encrypt: true, // Azure requires encryption
+        trustServerCertificate: false, // For production, should verify certificate
+        enableArithAbort: true
+      },
+      connectionTimeout: 30000,
+      requestTimeout: 30000
+    };
+
+    // For Azure SQL Database, ensure encryption is enabled
+    if (connection.driver.toLowerCase().includes('azure')) {
+      config.options!.encrypt = true;
+    }
+
+    try {
+      // Create connection pool
+      const pool = await sql.connect(config);
+      
+      try {
+        // Execute query
+        const result = await pool.request().query(query);
+        
+        // Format result
+        let columns: string[] = [];
+        let rows: any[][] = [];
+        
+        if (result.recordset && result.recordset.length > 0) {
+          columns = Object.keys(result.recordset[0]);
+          rows = result.recordset.map((row: any) => columns.map(col => row[col]));
+        }
+        
+        return {
+          columns,
+          rows,
+          rowCount: result.rowsAffected?.[0] || rows.length,
+          executionTime: 0
+        };
+      } finally {
+        // Always close the pool
+        await pool.close();
+      }
+    } catch (error) {
+      if (this.debug) {
+        console.error('MSSQL/Azure SQL query error:', error);
+      }
+      throw new Error(`MSSQL/Azure SQL error: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -418,7 +484,27 @@ export class DBeaverClient {
   async listTables(connection: DBeaverConnection, schema?: string, includeViews: boolean = false): Promise<any[]> {
     try {
       const query = buildListTablesQuery(connection.driver, schema, includeViews);
+      
+      if (this.debug) {
+        console.error('List tables query:', query);
+        console.error('Connection driver:', connection.driver);
+        console.error('Connection details:', {
+          id: connection.id,
+          name: connection.name,
+          host: connection.host,
+          database: connection.database
+        });
+      }
+      
       const result = await this.executeQuery(connection, query);
+      
+      if (this.debug) {
+        console.error('Query result columns:', result.columns);
+        console.error('Query result row count:', result.rows.length);
+        if (result.rows.length > 0) {
+          console.error('First row:', result.rows[0]);
+        }
+      }
       
       // Convert result to table objects
       return result.rows.map(row => {
@@ -431,9 +517,12 @@ export class DBeaverClient {
     } catch (error) {
       if (this.debug) {
         console.error(`Failed to list tables: ${error}`);
+        if (error instanceof Error) {
+          console.error('Stack trace:', error.stack);
+        }
       }
-      // Return empty array instead of crashing
-      return [];
+      // Re-throw the error so the caller can handle it properly
+      throw new Error(`Failed to list tables: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }

@@ -66,13 +66,14 @@ export function validateQuery(query: string): string | null {
 
   const trimmedQuery = query.trim().toLowerCase();
   
-  // Block potentially dangerous operations
+  // Block only the most dangerous operations
   const dangerousPatterns = [
     /drop\s+database/i,
     /drop\s+schema/i,
     /truncate\s+table/i,
-    /delete\s+from\s+\w+\s*$/i, // DELETE without WHERE clause
-    /update\s+\w+\s+set\s+.*\s*$/i, // UPDATE without WHERE clause
+    // Commented out to allow UPDATE and DELETE statements
+    // /delete\s+from\s+\w+\s*$/i, // DELETE without WHERE clause
+    // /update\s+\w+\s+set\s+.*\s*$/i, // UPDATE without WHERE clause
     /grant\s+/i,
     /revoke\s+/i,
     /create\s+user/i,
@@ -86,6 +87,14 @@ export function validateQuery(query: string): string | null {
     if (pattern.test(trimmedQuery)) {
       return `Potentially dangerous query detected. Query blocked for safety.`;
     }
+  }
+  
+  // Warn about potentially dangerous operations without WHERE clause
+  if (/delete\s+from\s+\w+\s*$/i.test(trimmedQuery)) {
+    console.error('[WARNING] DELETE without WHERE clause will affect all rows');
+  }
+  if (/update\s+\w+\s+set\s+[^w]*$/i.test(trimmedQuery) && !/where/i.test(trimmedQuery)) {
+    console.error('[WARNING] UPDATE without WHERE clause will affect all rows');
   }
 
   // Warn about operations that modify data
@@ -155,7 +164,7 @@ export function getTestQuery(driver: string): string {
     return 'SELECT * FROM dual;';
   } else if (driverLower.includes('sqlite')) {
     return 'SELECT sqlite_version();';
-  } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver')) {
+  } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver') || driverLower.includes('azure')) {
     return 'SELECT @@VERSION;';
   } else if (driverLower.includes('mongodb')) {
     return 'db.version()';
@@ -219,7 +228,7 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
       WHERE table_name = UPPER('${tableName}')
       ORDER BY column_id;
     `;
-  } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver')) {
+  } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver') || driverLower.includes('azure')) {
     return `
       SELECT 
         COLUMN_NAME as column_name,
@@ -305,6 +314,27 @@ export function buildListTablesQuery(driver: string, schema?: string, includeVie
         AND name NOT LIKE 'sqlite_%'
       ORDER BY name;
     `;
+    return query;
+    
+  } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver') || driverLower.includes('azure')) {
+    let query = `
+      SELECT 
+        TABLE_NAME as table_name,
+        TABLE_TYPE as table_type,
+        TABLE_SCHEMA as table_schema
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+    `;
+    
+    if (schema) {
+      query += ` AND TABLE_SCHEMA = '${schema}'`;
+    }
+    
+    if (!includeViews) {
+      query += ` AND TABLE_TYPE = 'BASE TABLE'`;
+    }
+    
+    query += ` ORDER BY TABLE_SCHEMA, TABLE_NAME;`;
     return query;
     
   } else if (driverLower.includes('oracle')) {

@@ -626,46 +626,95 @@ class DBeaverMCPServer {
     query: string; 
     maxRows?: number 
   }) {
-    const connectionId = sanitizeConnectionId(args.connectionId);
-    const query = args.query.trim();
-    const maxRows = args.maxRows || 1000;
-    
-    // Validate query
-    const validationError = validateQuery(query);
-    if (validationError) {
-      throw new McpError(ErrorCode.InvalidParams, validationError);
+    try {
+      const connectionId = sanitizeConnectionId(args.connectionId);
+      const query = args.query.trim();
+      const maxRows = args.maxRows || 1000;
+      
+      // Log the incoming request
+      this.log(`Execute query request - connectionId: ${connectionId}, query: ${query.substring(0, 100)}...`, 'debug');
+      
+      // Validate query
+      const validationError = validateQuery(query);
+      if (validationError) {
+        this.log(`Query validation failed: ${validationError}`, 'error');
+        throw new McpError(ErrorCode.InvalidParams, validationError);
+      }
+      
+      const connection = await this.configParser.getConnection(connectionId);
+      if (!connection) {
+        this.log(`Connection not found: ${connectionId}`, 'error');
+        throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
+      }
+      
+      this.log(`Found connection: ${connection.name} (driver: ${connection.driver})`, 'debug');
+      
+      // Add row limit if not present and it's a SELECT query
+      let finalQuery = query;
+      const queryLower = query.toLowerCase();
+      const driver = connection.driver.toLowerCase();
+      
+      if (queryLower.trimStart().startsWith('select')) {
+        // Check if query already has a limit/top clause
+        const hasLimit = queryLower.includes('limit');
+        const hasTop = queryLower.includes('top');
+        const hasOffset = queryLower.includes('offset');
+        
+        if (!hasLimit && !hasTop && !hasOffset) {
+          // Add appropriate limit clause based on database type
+          if (driver.includes('azure') || driver.includes('mssql') || driver.includes('sqlserver')) {
+            // SQL Server/Azure SQL uses TOP
+            finalQuery = query.replace(/^(\s*select\s+)/i, `$1TOP ${maxRows} `);
+          } else if (driver.includes('oracle')) {
+            // Oracle uses ROWNUM or FETCH FIRST
+            finalQuery = `${query} FETCH FIRST ${maxRows} ROWS ONLY`;
+          } else {
+            // PostgreSQL, MySQL, SQLite use LIMIT
+            finalQuery = `${query} LIMIT ${maxRows}`;
+          }
+        }
+      }
+      
+      this.log(`Executing query on ${connection.driver}: ${finalQuery.substring(0, 100)}...`, 'debug');
+      
+      const result = await this.dbeaverClient.executeQuery(connection, finalQuery);
+      
+      this.log(`Query executed successfully. Rows returned: ${result.rowCount}`, 'debug');
+      
+      const response = {
+        query: finalQuery,
+        connection: connection.name,
+        executionTime: result.executionTime,
+        rowCount: result.rowCount,
+        columns: result.columns,
+        rows: result.rows,
+        truncated: result.rows.length >= maxRows
+      };
+      
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(response, null, 2),
+        }],
+      };
+    } catch (error) {
+      // Log the full error details
+      this.log(`Execute query failed: ${error}`, 'error');
+      if (error instanceof Error) {
+        this.log(`Error stack: ${error.stack}`, 'debug');
+      }
+      
+      // Re-throw MCP errors as-is
+      if (error instanceof McpError) {
+        throw error;
+      }
+      
+      // Wrap other errors with more context
+      throw new McpError(
+        ErrorCode.InternalError, 
+        `Query execution failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
-    
-    const connection = await this.configParser.getConnection(connectionId);
-    if (!connection) {
-      throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
-    }
-    
-    // Add LIMIT clause if not present and it's a SELECT query
-    let finalQuery = query;
-    if (query.toLowerCase().trimStart().startsWith('select') && 
-        !query.toLowerCase().includes('limit')) {
-      finalQuery = `${query} LIMIT ${maxRows}`;
-    }
-    
-    const result = await this.dbeaverClient.executeQuery(connection, finalQuery);
-    
-    const response = {
-      query: finalQuery,
-      connection: connection.name,
-      executionTime: result.executionTime,
-      rowCount: result.rowCount,
-      columns: result.columns,
-      rows: result.rows,
-      truncated: result.rows.length >= maxRows
-    };
-    
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify(response, null, 2),
-      }],
-    };
   }
 
   private async handleWriteQuery(args: { connectionId: string; query: string }) {
@@ -938,25 +987,52 @@ class DBeaverMCPServer {
     schema?: string; 
     includeViews?: boolean 
   }) {
-    const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.configParser.getConnection(connectionId);
-    
-    if (!connection) {
-      throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
+    try {
+      const connectionId = sanitizeConnectionId(args.connectionId);
+      
+      this.log(`List tables request - connectionId: ${connectionId}, schema: ${args.schema}, includeViews: ${args.includeViews}`, 'debug');
+      
+      const connection = await this.configParser.getConnection(connectionId);
+      
+      if (!connection) {
+        this.log(`Connection not found: ${connectionId}`, 'error');
+        throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
+      }
+      
+      this.log(`Found connection: ${connection.name} (driver: ${connection.driver})`, 'debug');
+      
+      const tables = await this.dbeaverClient.listTables(
+        connection, 
+        args.schema, 
+        args.includeViews || false
+      );
+      
+      this.log(`Listed ${tables.length} tables successfully`, 'debug');
+      
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(tables, null, 2),
+        }],
+      };
+    } catch (error) {
+      // Log the full error details
+      this.log(`List tables failed: ${error}`, 'error');
+      if (error instanceof Error) {
+        this.log(`Error stack: ${error.stack}`, 'debug');
+      }
+      
+      // Re-throw MCP errors as-is
+      if (error instanceof McpError) {
+        throw error;
+      }
+      
+      // Wrap other errors with more context
+      throw new McpError(
+        ErrorCode.InternalError, 
+        `Failed to list tables: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
-    
-    const tables = await this.dbeaverClient.listTables(
-      connection, 
-      args.schema, 
-      args.includeViews || false
-    );
-    
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify(tables, null, 2),
-      }],
-    };
   }
 
   private async handleAppendInsight(args: { insight: string; connection?: string; tags?: string[] }) {
