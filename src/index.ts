@@ -53,13 +53,15 @@ class DBeaverMCPServer {
     this.configParser = new DBeaverConfigParser({
       debug: this.debug,
       timeout: parseInt(process.env.DBEAVER_TIMEOUT || '30000'),
-      executablePath: process.env.DBEAVER_PATH
+      executablePath: process.env.DBEAVER_PATH,
+      workspacePath: process.env.DBEAVER_WORKSPACE
     });
 
     this.dbeaverClient = new DBeaverClient(
       process.env.DBEAVER_PATH,
       parseInt(process.env.DBEAVER_TIMEOUT || '30000'),
-      this.debug
+      this.debug,
+      process.env.DBEAVER_WORKSPACE || this.configParser.getWorkspacePath()
     );
 
     this.loadInsights();
@@ -652,12 +654,13 @@ class DBeaverMCPServer {
       if (isSqlServer) {
         if (!lowerQuery.includes('top ') && !lowerQuery.includes('offset ') && !lowerQuery.includes('fetch next')) {
           // Simple injection of TOP for SQL Server
-          // This is a naive implementation, but covers basic cases
           finalQuery = query.replace(/^select/i, `SELECT TOP ${maxRows}`);
         }
       } else {
         if (!lowerQuery.includes('limit')) {
-          finalQuery = `${query} LIMIT ${maxRows}`;
+          // Strip trailing semicolons so we don't produce invalid SQL like `SELECT 1; LIMIT 10`
+          const withoutTrailingSemicolon = query.replace(/;+\s*$/g, '');
+          finalQuery = `${withoutTrailingSemicolon} LIMIT ${maxRows}`;
         }
       }
     }

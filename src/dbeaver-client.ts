@@ -5,6 +5,7 @@ import os from 'os';
 import csv from 'csv-parser';
 import { Client } from 'pg';
 import sql from 'mssql';
+import mysql from 'mysql2/promise';
 import {
   DBeaverConnection,
   QueryResult,
@@ -19,11 +20,18 @@ export class DBeaverClient {
   private executablePath: string;
   private timeout: number;
   private debug: boolean;
+  private workspacePath?: string;
 
-  constructor(executablePath?: string, timeout: number = 30000, debug: boolean = false) {
+  constructor(
+    executablePath?: string,
+    timeout: number = 30000,
+    debug: boolean = false,
+    workspacePath?: string
+  ) {
     this.executablePath = executablePath || findDBeaverExecutable();
     this.timeout = timeout;
     this.debug = debug;
+    this.workspacePath = workspacePath;
   }
 
   async executeQuery(connection: DBeaverConnection, query: string): Promise<QueryResult> {
@@ -35,7 +43,25 @@ export class DBeaverClient {
       result.executionTime = Date.now() - startTime;
       return result;
     } catch (error) {
-      throw new Error(`Query execution failed: ${error}`);
+      const messageRaw = error instanceof Error ? error.message : String(error);
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String((error as any).code)
+          : undefined;
+      const fallback = code ? `Error (${code})` : String(error);
+      const message = messageRaw && messageRaw.trim().length > 0 ? messageRaw : fallback;
+      if (this.debug) {
+        // eslint-disable-next-line no-console
+        console.error('Query execution error details:', {
+          connectionId: connection.id,
+          driver: connection.driver,
+          error:
+            error instanceof Error
+              ? { message: error.message, name: error.name, code: (error as any).code, stack: error.stack }
+              : String(error),
+        });
+      }
+      throw new Error(`Query execution failed: ${message}`);
     }
   }
 
@@ -88,6 +114,7 @@ export class DBeaverClient {
       const args = [
         '-nosplash',
         '-reuseWorkspace',
+        ...(this.workspacePath ? ['-data', this.workspacePath] : []),
         '-con', connection.id,
         '-f', sqlFile,
         '-o', outputFile,
@@ -120,9 +147,46 @@ export class DBeaverClient {
       return this.executePostgreSQLQuery(connection, query);
     } else if (driver.includes('mssql') || driver.includes('sqlserver') || driver.includes('microsoft')) {
       return this.executeSQLServerQuery(connection, query);
+    } else if (driver.includes('mysql') || driver.includes('mariadb')) {
+      return this.executeMySQLQuery(connection, query);
     } else {
-      // For unsupported drivers, return a helpful error instead of crashing
-      throw new Error(`Database driver "${driver}" is not yet supported for direct query execution. Supported drivers: SQLite, PostgreSQL. Please use DBeaver GUI for this connection type.`);
+      // Fall back to DBeaver CLI for all other drivers (e.g. Oracle).
+      // This leverages DBeaver's drivers and connection configuration, so the user doesn't
+      // need native CLI tools installed for every database.
+      return this.executeDBeaverQuery(connection, query);
+    }
+  }
+
+  private async executeDBeaverQuery(connection: DBeaverConnection, query: string): Promise<QueryResult> {
+    const tempDir = os.tmpdir();
+    const exportId = `query_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    const sqlFile = path.join(tempDir, `${exportId}.sql`);
+    const outputFile = path.join(tempDir, `${exportId}_output.csv`);
+
+    try {
+      fs.writeFileSync(sqlFile, query, 'utf-8');
+
+      const args = [
+        '-nosplash',
+        '-reuseWorkspace',
+        ...(this.workspacePath ? ['-data', this.workspacePath] : []),
+        '-con', connection.id,
+        '-f', sqlFile,
+        '-o', outputFile,
+        '-of', 'csv',
+        '-quit'
+      ];
+
+      await this.executeDBeaver(args);
+
+      if (!fs.existsSync(outputFile)) {
+        // Some non-SELECT statements may not produce a resultset/export file.
+        return { columns: [], rows: [], rowCount: 0, executionTime: 0 };
+      }
+
+      return await this.parseCSVOutput(outputFile);
+    } finally {
+      this.cleanupFiles([sqlFile, outputFile]);
     }
   }
 
@@ -235,6 +299,159 @@ export class DBeaverClient {
     }
   }
 
+  private async executeSQLServerQuery(connection: DBeaverConnection, query: string): Promise<QueryResult> {
+    const host = connection.host || connection.properties?.host || 'localhost';
+    const port = parseInt(String(connection.port || connection.properties?.port || '1433'));
+    const database = connection.database || connection.properties?.database || 'master';
+    const user = connection.user || connection.properties?.user;
+    const password = connection.properties?.password;
+
+    if (!user || !password) {
+      throw new Error('User and password are required for SQL Server connection');
+    }
+
+    const config = {
+      user,
+      password,
+      server: host,
+      port,
+      database,
+      options: {
+        encrypt: false,
+        trustServerCertificate: true,
+      }
+    };
+
+    try {
+      const pool = await sql.connect(config);
+      const result = await pool.request().query(query);
+
+      const columns: string[] = [];
+      const rows: any[][] = [];
+      let rowCount = 0;
+
+      if (result.recordset) {
+        if (result.recordset.length > 0) {
+          columns.push(...Object.keys(result.recordset[0]));
+          rows.push(...result.recordset.map(row => Object.values(row)));
+        } else if (result.recordset.columns) {
+          Object.values(result.recordset.columns).forEach((col: any) => {
+            columns.push(col.name);
+          });
+        }
+        rowCount = result.rowsAffected[0] || result.recordset.length;
+      } else {
+        rowCount = result.rowsAffected[0] || 0;
+      }
+
+      await pool.close();
+
+      return {
+        columns,
+        rows,
+        rowCount,
+        executionTime: 0
+      };
+    } catch (error) {
+      throw new Error(`SQL Server error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async executeMySQLQuery(connection: DBeaverConnection, query: string): Promise<QueryResult> {
+    const host = connection.host || connection.properties?.host || 'localhost';
+    const port = connection.port || (connection.properties?.port ? parseInt(connection.properties.port) : 3306);
+    const database = connection.database || connection.properties?.database;
+    const user = connection.user || connection.properties?.user || process.env.MYSQL_USER || 'root';
+    const password = connection.properties?.password || process.env.MYSQL_PWD || process.env.MYSQL_PASSWORD;
+
+    // SSL handling (best-effort; varies across DBeaver driver configs)
+    const sslModeRaw =
+      connection.properties?.['ssl.mode'] ||
+      connection.properties?.['sslMode'] ||
+      connection.properties?.['sslmode'] ||
+      connection.properties?.['useSSL'] ||
+      connection.properties?.['ssl'];
+    const sslMode = String(sslModeRaw ?? '').toLowerCase();
+    const sslCa = connection.properties?.['ssl.ca'] || connection.properties?.['sslCA'] || connection.properties?.['sslrootcert'];
+    const sslCert = connection.properties?.['ssl.cert'] || connection.properties?.['sslCert'] || connection.properties?.['sslcert'];
+    const sslKey = connection.properties?.['ssl.key'] || connection.properties?.['sslKey'] || connection.properties?.['sslkey'];
+
+    let ssl: any = undefined;
+    const requireSsl = ['require', 'verify-ca', 'verify-full', 'true', '1', 'preferred', 'enabled', 'yes'].includes(sslMode);
+    const disableSsl = ['disable', 'false', '0', 'none', 'off', 'no'].includes(sslMode);
+    if (requireSsl) {
+      const sslObj: any = {};
+      try {
+        if (sslCa && fs.existsSync(String(sslCa))) sslObj.ca = fs.readFileSync(String(sslCa)).toString();
+        if (sslCert && fs.existsSync(String(sslCert))) sslObj.cert = fs.readFileSync(String(sslCert)).toString();
+        if (sslKey && fs.existsSync(String(sslKey))) sslObj.key = fs.readFileSync(String(sslKey)).toString();
+      } catch (e) {
+        // ignore and let mysql2 use defaults
+      }
+      // For MySQL, verification behavior depends on the TLS layer. If CA is provided, mysql2 will verify.
+      ssl = sslObj;
+    } else if (disableSsl) {
+      ssl = undefined;
+    }
+
+    const connectTimeout = Math.max(1000, this.timeout);
+    const connectionConfig: mysql.ConnectionOptions = {
+      host,
+      port,
+      user,
+      password,
+      database,
+      ssl,
+      connectTimeout,
+      // Important: avoid multi-statement execution for safety
+      multipleStatements: false
+    };
+
+    const withTimeout = async <T>(promise: Promise<T>, label: string): Promise<T> => {
+      let timeoutId: NodeJS.Timeout | undefined;
+      const timeoutPromise = new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${this.timeout}ms`)), this.timeout);
+      });
+      try {
+        return await Promise.race([promise, timeoutPromise]);
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
+    };
+
+    let conn: mysql.Connection | undefined;
+    try {
+      conn = await withTimeout(mysql.createConnection(connectionConfig), 'MySQL connect');
+      const [rows, fields] = await withTimeout(conn.query(query), 'MySQL query');
+
+      // SELECT/SHOW/DESCRIBE return rows as array of objects; fields includes column metadata
+      if (Array.isArray(rows)) {
+        const columns: string[] = Array.isArray(fields)
+          ? (fields as any[]).map((f: any) => String(f.name))
+          : (rows.length > 0 && typeof rows[0] === 'object' && rows[0] !== null ? Object.keys(rows[0] as any) : []);
+        const dataRows: any[][] = rows.map((r: any) => columns.map((c: string) => (r as any)[c]));
+        return { columns, rows: dataRows, rowCount: rows.length, executionTime: 0 };
+      }
+
+      // Non-SELECT returns OkPacket-like object
+      const ok: any = rows;
+      const affected = typeof ok?.affectedRows === 'number' ? ok.affectedRows : 0;
+      return { columns: [], rows: [], rowCount: affected, executionTime: 0 };
+    } finally {
+      if (conn) {
+        try {
+          await conn.end();
+        } catch (closeError) {
+          console.error('Failed to close MySQL connection:', {
+            error: closeError instanceof Error ? closeError.message : String(closeError),
+            host,
+            database
+          });
+        }
+      }
+    }
+  }
+
   private async executeDBeaver(args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
       const proc = spawn(this.executablePath, args, { stdio: this.debug ? 'inherit' : 'ignore' });
@@ -283,6 +500,16 @@ export class DBeaverClient {
       if (!fs.existsSync(filePath)) {
         reject(new Error(`Output file not found: ${filePath}`));
         return;
+      }
+
+      try {
+        const stats = fs.statSync(filePath);
+        if (stats.size === 0) {
+          resolve({ columns: [], rows: [], rowCount: 0, executionTime: 0 });
+          return;
+        }
+      } catch (e) {
+        // If stat fails, continue and let the stream handle errors
       }
 
       fs.createReadStream(filePath)
@@ -437,63 +664,6 @@ export class DBeaverClient {
       }
       // Return empty array instead of crashing
       return [];
-    }
-  }
-  async executeSQLServerQuery(connection: DBeaverConnection, query: string): Promise<QueryResult> {
-    const host = connection.host || connection.properties?.host || 'localhost';
-    const port = parseInt(String(connection.port || connection.properties?.port || '1433'));
-    const database = connection.database || connection.properties?.database || 'master';
-    const user = connection.user || connection.properties?.user;
-    const password = connection.properties?.password;
-
-    if (!user || !password) {
-      throw new Error('User and password are required for SQL Server connection');
-    }
-
-    const config = {
-      user,
-      password,
-      server: host,
-      port,
-      database,
-      options: {
-        encrypt: false,
-        trustServerCertificate: true,
-      }
-    };
-
-    try {
-      const pool = await sql.connect(config);
-      const result = await pool.request().query(query);
-
-      const columns: string[] = [];
-      const rows: any[][] = [];
-      let rowCount = 0;
-
-      if (result.recordset) {
-        if (result.recordset.length > 0) {
-          columns.push(...Object.keys(result.recordset[0]));
-          rows.push(...result.recordset.map(row => Object.values(row)));
-        } else if (result.recordset.columns) {
-          Object.values(result.recordset.columns).forEach((col: any) => {
-            columns.push(col.name);
-          });
-        }
-        rowCount = result.rowsAffected[0] || result.recordset.length;
-      } else {
-        rowCount = result.rowsAffected[0] || 0;
-      }
-
-      await pool.close();
-
-      return {
-        columns,
-        rows,
-        rowCount,
-        executionTime: 0
-      };
-    } catch (error) {
-      throw new Error(`SQL Server error: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }
