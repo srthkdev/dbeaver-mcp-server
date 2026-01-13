@@ -1,6 +1,6 @@
 {
     "name": "dbeaver-mcp-server",
-  "version": "1.2.3",
+    "version": "1.2.3",
     "description": "Production-ready Model Context Protocol server for universal database access through DBeaver connections - supports 200+ database types",
     "main": "dist/index.js",
     "type": "module",
@@ -53,15 +53,17 @@
     "license": "MIT",
     "dependencies": {
         "@modelcontextprotocol/sdk": "1.9.0",
+        "@types/mssql": "^9.1.8",
         "csv-parser": "^3.0.0",
         "csv-stringify": "^6.4.6",
-        "pg": "^8.13.1"
+        "mssql": "^12.2.0",
+        "pg": "^8.13.1",
+        "xml2js": "^0.6.2"
     },
     "devDependencies": {
         "@types/node": "^20.0.0",
-        "@types/xml2js": "^0.4.14",
         "@types/pg": "^8.11.6",
-        "typescript": "^5.8.3",
+        "@types/xml2js": "^0.4.14",
         "rimraf": "^5.0.5",
         "shx": "^0.4.0",
         "typescript": "^5.8.3"
