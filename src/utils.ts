@@ -127,6 +127,47 @@ export function sanitizeConnectionId(connectionId: string): string {
 }
 
 /**
+ * Sanitize SQL identifier (table name, schema name, column name)
+ * Escapes single quotes and validates the identifier
+ */
+export function sanitizeIdentifier(identifier: string): string {
+  if (!identifier || typeof identifier !== 'string') {
+    throw new Error('Identifier must be a non-empty string');
+  }
+
+  // Remove or escape dangerous characters
+  // Allow alphanumeric, underscore, and dots (for schema.table notation)
+  const sanitized = identifier.trim();
+
+  // Check for SQL injection patterns
+  if (/['";\\]/.test(sanitized)) {
+    throw new Error('Identifier contains invalid characters');
+  }
+
+  // Check for suspicious patterns (SQL comments, semicolons)
+  if (/--|\/\*|\*\/|;/.test(sanitized)) {
+    throw new Error('Identifier contains suspicious patterns');
+  }
+
+  // Validate length
+  if (sanitized.length > 128) {
+    throw new Error('Identifier too long (max 128 characters)');
+  }
+
+  // Must start with letter or underscore
+  if (!/^[a-zA-Z_]/.test(sanitized)) {
+    throw new Error('Identifier must start with a letter or underscore');
+  }
+
+  // Only allow safe characters
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(sanitized)) {
+    throw new Error('Identifier contains invalid characters');
+  }
+
+  return sanitized;
+}
+
+/**
  * Format error messages consistently
  */
 export function formatError(error: unknown): string {
@@ -172,10 +213,11 @@ export function getTestQuery(driver: string): string {
  */
 export function buildSchemaQuery(driver: string, tableName: string): string {
   const driverLower = driver.toLowerCase();
+  const safeTableName = sanitizeIdentifier(tableName);
 
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
     return `
-      SELECT 
+      SELECT
         column_name,
         data_type,
         is_nullable,
@@ -183,13 +225,13 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
         character_maximum_length,
         numeric_precision,
         numeric_scale
-      FROM information_schema.columns 
-      WHERE table_name = '${tableName}'
+      FROM information_schema.columns
+      WHERE table_name = '${safeTableName}'
       ORDER BY ordinal_position;
     `;
   } else if (driverLower.includes('mysql')) {
     return `
-      SELECT 
+      SELECT
         COLUMN_NAME as column_name,
         DATA_TYPE as data_type,
         IS_NULLABLE as is_nullable,
@@ -199,15 +241,15 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
         NUMERIC_SCALE as numeric_scale,
         COLUMN_KEY as column_key,
         EXTRA as extra
-      FROM information_schema.COLUMNS 
-      WHERE TABLE_NAME = '${tableName}'
+      FROM information_schema.COLUMNS
+      WHERE TABLE_NAME = '${safeTableName}'
       ORDER BY ORDINAL_POSITION;
     `;
   } else if (driverLower.includes('sqlite')) {
-    return `PRAGMA table_info(${tableName});`;
+    return `PRAGMA table_info(${safeTableName});`;
   } else if (driverLower.includes('oracle')) {
     return `
-      SELECT 
+      SELECT
         column_name,
         data_type,
         nullable,
@@ -215,13 +257,13 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
         data_length,
         data_precision,
         data_scale
-      FROM user_tab_columns 
-      WHERE table_name = UPPER('${tableName}')
+      FROM user_tab_columns
+      WHERE table_name = UPPER('${safeTableName}')
       ORDER BY column_id;
     `;
   } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver')) {
     return `
-      SELECT 
+      SELECT
         COLUMN_NAME as column_name,
         DATA_TYPE as data_type,
         IS_NULLABLE as is_nullable,
@@ -229,20 +271,20 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
         CHARACTER_MAXIMUM_LENGTH as character_maximum_length,
         NUMERIC_PRECISION as numeric_precision,
         NUMERIC_SCALE as numeric_scale
-      FROM INFORMATION_SCHEMA.COLUMNS 
-      WHERE TABLE_NAME = '${tableName}'
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_NAME = '${safeTableName}'
       ORDER BY ORDINAL_POSITION;
     `;
   } else {
     // Generic fallback
     return `
-      SELECT 
+      SELECT
         column_name,
         data_type,
         is_nullable,
         column_default
-      FROM information_schema.columns 
-      WHERE table_name = '${tableName}';
+      FROM information_schema.columns
+      WHERE table_name = '${safeTableName}';
     `;
   }
 }
@@ -256,19 +298,20 @@ export function buildListTablesQuery(
   includeViews: boolean = false
 ): string {
   const driverLower = driver.toLowerCase();
+  const safeSchema = schema ? sanitizeIdentifier(schema) : null;
 
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
     let query = `
-      SELECT 
+      SELECT
         table_name,
         table_type,
         table_schema
-      FROM information_schema.tables 
+      FROM information_schema.tables
       WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
     `;
 
-    if (schema) {
-      query += ` AND table_schema = '${schema}'`;
+    if (safeSchema) {
+      query += ` AND table_schema = '${safeSchema}'`;
     }
 
     if (!includeViews) {
@@ -279,16 +322,16 @@ export function buildListTablesQuery(
     return query;
   } else if (driverLower.includes('mysql')) {
     let query = `
-      SELECT 
+      SELECT
         TABLE_NAME as table_name,
         TABLE_TYPE as table_type,
         TABLE_SCHEMA as table_schema
-      FROM information_schema.TABLES 
+      FROM information_schema.TABLES
       WHERE TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
     `;
 
-    if (schema) {
-      query += ` AND TABLE_SCHEMA = '${schema}'`;
+    if (safeSchema) {
+      query += ` AND TABLE_SCHEMA = '${safeSchema}'`;
     }
 
     if (!includeViews) {
@@ -299,10 +342,10 @@ export function buildListTablesQuery(
     return query;
   } else if (driverLower.includes('sqlite')) {
     const query = `
-      SELECT 
+      SELECT
         name as table_name,
         type as table_type
-      FROM sqlite_master 
+      FROM sqlite_master
       WHERE type IN ('table'${includeViews ? ", 'view'" : ''})
         AND name NOT LIKE 'sqlite_%'
       ORDER BY name;
@@ -310,29 +353,29 @@ export function buildListTablesQuery(
     return query;
   } else if (driverLower.includes('oracle')) {
     let query = `
-      SELECT 
+      SELECT
         table_name,
         'TABLE' as table_type,
         owner as table_schema
       FROM all_tables
     `;
 
-    if (schema) {
-      query += ` WHERE owner = UPPER('${schema}')`;
+    if (safeSchema) {
+      query += ` WHERE owner = UPPER('${safeSchema}')`;
     }
 
     if (includeViews) {
       query += `
         UNION ALL
-        SELECT 
+        SELECT
           view_name as table_name,
           'VIEW' as table_type,
           owner as table_schema
         FROM all_views
       `;
 
-      if (schema) {
-        query += ` WHERE owner = UPPER('${schema}')`;
+      if (safeSchema) {
+        query += ` WHERE owner = UPPER('${safeSchema}')`;
       }
     }
 
@@ -341,19 +384,19 @@ export function buildListTablesQuery(
   } else {
     // Generic fallback
     let query = `
-      SELECT 
+      SELECT
         table_name,
         table_type,
         table_schema
       FROM information_schema.tables
     `;
 
-    if (schema) {
-      query += ` WHERE table_schema = '${schema}'`;
+    if (safeSchema) {
+      query += ` WHERE table_schema = '${safeSchema}'`;
     }
 
     if (!includeViews) {
-      query += `${schema ? ' AND' : ' WHERE'} table_type = 'BASE TABLE'`;
+      query += `${safeSchema ? ' AND' : ' WHERE'} table_type = 'BASE TABLE'`;
     }
 
     query += ` ORDER BY table_schema, table_name;`;

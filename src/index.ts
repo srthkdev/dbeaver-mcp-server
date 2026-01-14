@@ -30,6 +30,12 @@ const VERSION = packageJson.version;
 // Tool categories for filtering
 const WRITE_TOOLS = ['write_query', 'create_table', 'alter_table', 'drop_table'];
 
+// Row limits
+const MAX_QUERY_ROWS = 100000;
+const MAX_EXPORT_ROWS = 1000000;
+const DEFAULT_QUERY_ROWS = 1000;
+const DEFAULT_EXPORT_ROWS = 10000;
+
 class DBeaverMCPServer {
   private server: Server;
   private configParser: DBeaverConfigParser;
@@ -373,8 +379,8 @@ class DBeaverMCPServer {
               },
               format: {
                 type: 'string',
-                enum: ['csv', 'json', 'xml', 'excel'],
-                description: 'Export format',
+                enum: ['csv', 'json'],
+                description: 'Export format (csv or json)',
                 default: 'csv',
               },
               includeHeaders: {
@@ -697,7 +703,8 @@ class DBeaverMCPServer {
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
-    const maxRows = args.maxRows || 1000;
+    const requestedRows = args.maxRows || DEFAULT_QUERY_ROWS;
+    const maxRows = Math.min(Math.max(1, requestedRows), MAX_QUERY_ROWS);
 
     // Validate query
     const validationError = validateQuery(query);
@@ -994,7 +1001,8 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
-    const maxRows = args.maxRows || 10000;
+    const requestedRows = args.maxRows || DEFAULT_EXPORT_ROWS;
+    const maxRows = Math.min(Math.max(1, requestedRows), MAX_EXPORT_ROWS);
     const format = args.format || 'csv';
 
     // Add LIMIT clause if not present

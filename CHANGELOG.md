@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Security vulnerabilities in dependencies
 - `@types/mssql` moved to devDependencies
+- SQL injection vulnerability in table/schema name handling
+- Deprecated `.substr()` replaced with secure `crypto.randomBytes()`
+- Added maxRows validation with upper bounds (100k query, 1M export)
+- Removed unsupported export formats (xml, excel) from API schema
 
 ## [1.2.3] - 2026-01-07
 

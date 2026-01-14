@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { validateQuery, sanitizeConnectionId, getTestQuery } from '../src/utils.js';
+import {
+  validateQuery,
+  sanitizeConnectionId,
+  sanitizeIdentifier,
+  getTestQuery,
+} from '../src/utils.js';
 
 describe('validateQuery', () => {
   it('should allow SELECT queries', () => {
@@ -51,6 +56,39 @@ describe('sanitizeConnectionId', () => {
   it('should remove invalid characters', () => {
     expect(sanitizeConnectionId('conn;DROP TABLE')).toBe('connDROPTABLE');
     expect(sanitizeConnectionId('test<script>')).toBe('testscript');
+  });
+});
+
+describe('sanitizeIdentifier', () => {
+  it('should allow valid identifiers', () => {
+    expect(sanitizeIdentifier('users')).toBe('users');
+    expect(sanitizeIdentifier('my_table')).toBe('my_table');
+    expect(sanitizeIdentifier('Table123')).toBe('Table123');
+    expect(sanitizeIdentifier('_private')).toBe('_private');
+  });
+
+  it('should reject identifiers with SQL injection patterns', () => {
+    expect(() => sanitizeIdentifier("users'; DROP TABLE--")).toThrow();
+    expect(() => sanitizeIdentifier('table"name')).toThrow();
+    expect(() => sanitizeIdentifier('name;')).toThrow();
+    expect(() => sanitizeIdentifier('/* comment */')).toThrow();
+  });
+
+  it('should reject identifiers starting with numbers', () => {
+    expect(() => sanitizeIdentifier('123table')).toThrow();
+  });
+
+  it('should reject empty identifiers', () => {
+    expect(() => sanitizeIdentifier('')).toThrow();
+  });
+
+  it('should reject identifiers that are too long', () => {
+    const longName = 'a'.repeat(129);
+    expect(() => sanitizeIdentifier(longName)).toThrow();
+  });
+
+  it('should trim whitespace', () => {
+    expect(sanitizeIdentifier('  users  ')).toBe('users');
   });
 });
 

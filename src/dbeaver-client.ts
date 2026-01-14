@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -112,7 +113,7 @@ export class DBeaverClient {
     options: ExportOptions
   ): Promise<string> {
     const tempDir = os.tmpdir();
-    const exportId = `export_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const exportId = `export_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
     const sqlFile = path.join(tempDir, `${exportId}.sql`);
     const outputFile = path.join(tempDir, `${exportId}_output.${options.format || 'csv'}`);
 
@@ -183,7 +184,7 @@ export class DBeaverClient {
     query: string
   ): Promise<QueryResult> {
     const tempDir = os.tmpdir();
-    const exportId = `query_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    const exportId = `query_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
     const sqlFile = path.join(tempDir, `${exportId}.sql`);
     const outputFile = path.join(tempDir, `${exportId}_output.csv`);
 
