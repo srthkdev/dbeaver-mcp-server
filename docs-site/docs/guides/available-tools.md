@@ -4,131 +4,119 @@ sidebar_position: 2
 
 # Available Tools
 
-The DBeaver MCP Server provides 14 powerful tools organized into four categories. Each tool is designed with safety in mind, with clear indicators of their impact level.
-
-## 📋 Connection Management
+## Connection Management
 
 ### `list_connections`
-**Description**: List all available DBeaver database connections  
-**Safety Level**: ✅ Safe  
-**Parameters**:
-- `includeDetails` (optional): Include detailed connection information
+List all DBeaver database connections.
 
-**Example**:
-```json
-{
-  "includeDetails": true
-}
-```
+Parameters:
+- `includeDetails` (optional): Include detailed connection info
 
 ### `get_connection_info`
-**Description**: Get detailed information about a specific DBeaver connection  
-**Safety Level**: ✅ Safe  
-**Parameters**:
-- `connectionId` (required): The ID or name of the DBeaver connection
+Get details about a specific connection.
+
+Parameters:
+- `connectionId` (required): Connection ID or name
 
 ### `test_connection`
-**Description**: Test connectivity to a DBeaver connection  
-**Safety Level**: ✅ Safe  
-**Parameters**:
-- `connectionId` (required): The ID or name of the DBeaver connection to test
+Test if a connection works.
 
-## 📊 Data Operations
+Parameters:
+- `connectionId` (required): Connection ID or name
+
+## Data Operations
 
 ### `execute_query`
-**Description**: Execute SELECT queries (read-only)  
-**Safety Level**: ✅ Safe  
-**Notes**: Queries are executed natively for SQLite, PostgreSQL, and MySQL/MySQL8. Other drivers may fall back to DBeaver headless mode (set `DBEAVER_PATH` if needed).  
-**Parameters**:
-- `connectionId` (required): The ID or name of the DBeaver connection
-- `query` (required): The SQL query to execute (SELECT statements only)
-- `maxRows` (optional): Maximum number of rows to return (default: 1000)
+Run SELECT queries (read-only).
+
+Parameters:
+- `connectionId` (required): Connection ID or name
+- `query` (required): SQL SELECT statement
+- `maxRows` (optional): Max rows to return (default: 1000)
 
 ### `write_query`
-**Description**: Execute INSERT, UPDATE, or DELETE queries  
-**Safety Level**: ⚠️ Modifies data  
-**Parameters**:
-- `connectionId` (required): The ID or name of the DBeaver connection
-- `query` (required): The SQL query to execute (INSERT, UPDATE, DELETE)
+Run INSERT, UPDATE, or DELETE queries.
+
+Parameters:
+- `connectionId` (required): Connection ID or name
+- `query` (required): SQL statement
 
 ### `export_data`
-**Description**: Export query results to various formats (CSV, JSON, XML, Excel)  
-**Safety Level**: ✅ Safe  
-**Parameters**:
-- `connectionId` (required): The ID or name of the DBeaver connection
-- `query` (required): The SQL query to execute for export (SELECT only)
-- `format` (optional): Export format (csv, json, xml, excel) - default: csv
-- `includeHeaders` (optional): Include column headers in export - default: true
-- `maxRows` (optional): Maximum number of rows to export - default: 10000
+Export query results.
 
-## 🏗️ Schema Management
+Parameters:
+- `connectionId` (required): Connection ID or name
+- `query` (required): SQL SELECT statement
+- `format` (optional): csv or json (default: csv)
+- `includeHeaders` (optional): Include headers (default: true)
+- `maxRows` (optional): Max rows (default: 10000)
+
+## Schema Management
 
 ### `list_tables`
-**Description**: List all tables and views in a database  
-**Safety Level**: ✅ Safe  
-**Parameters**:
-- `connectionId` (required): The ID or name of the DBeaver connection
-- `schema` (optional): Specific schema to list tables from
-- `includeViews` (optional): Include views in the results - default: false
+List tables and views.
+
+Parameters:
+- `connectionId` (required): Connection ID or name
+- `schema` (optional): Schema to list from
+- `includeViews` (optional): Include views (default: false)
 
 ### `get_table_schema`
-**Description**: Get detailed table schema information  
-**Safety Level**: ✅ Safe  
-**Parameters**:
-- `connectionId` (required): The ID or name of the DBeaver connection
-- `tableName` (required): The name of the table to describe
-- `includeIndexes` (optional): Include index information - default: true
+Get table structure.
+
+Parameters:
+- `connectionId` (required): Connection ID or name
+- `tableName` (required): Table name
+- `includeIndexes` (optional): Include indexes (default: true)
 
 ### `create_table`
-**Description**: Create new database tables  
-**Safety Level**: ⚠️ Schema changes  
-**Parameters**:
-- `connectionId` (required): The ID or name of the DBeaver connection
+Create a table.
+
+Parameters:
+- `connectionId` (required): Connection ID or name
 - `query` (required): CREATE TABLE statement
 
 ### `alter_table`
-**Description**: Modify existing table schemas  
-**Safety Level**: ⚠️ Schema changes  
-**Parameters**:
-- `connectionId` (required): The ID or name of the DBeaver connection
+Modify a table.
+
+Parameters:
+- `connectionId` (required): Connection ID or name
 - `query` (required): ALTER TABLE statement
 
 ### `drop_table`
-**Description**: Remove tables with safety confirmation  
-**Safety Level**: ❌ Destructive  
-**Parameters**:
-- `connectionId` (required): The ID or name of the DBeaver connection
-- `tableName` (required): Name of the table to drop
-- `confirm` (required): Safety confirmation flag (must be true)
+Drop a table (requires confirmation).
 
-## 📈 Analytics & Intelligence
+Parameters:
+- `connectionId` (required): Connection ID or name
+- `tableName` (required): Table to drop
+- `confirm` (required): Must be true
+
+## Other
 
 ### `get_database_stats`
-**Description**: Get database statistics and information  
-**Safety Level**: ✅ Safe  
-**Parameters**:
-- `connectionId` (required): The ID or name of the DBeaver connection
+Get database statistics.
+
+Parameters:
+- `connectionId` (required): Connection ID or name
 
 ### `append_insight`
-**Description**: Add business insights to memo  
-**Safety Level**: ✅ Safe  
-**Parameters**:
-- `insight` (required): The business insight or analysis note to store
-- `connection` (optional): Connection ID to associate with this insight
-- `tags` (optional): Array of tags to categorize the insight
+Store an analysis note.
+
+Parameters:
+- `insight` (required): Note text
+- `connection` (optional): Associated connection
+- `tags` (optional): Array of tags
 
 ### `list_insights`
-**Description**: List stored business insights  
-**Safety Level**: ✅ Safe  
-**Parameters**:
-- `connection` (optional): Filter insights by connection ID
-- `tags` (optional): Filter insights by tags
+Retrieve stored notes.
 
-## 🛡️ Safety Guidelines
+Parameters:
+- `connection` (optional): Filter by connection
+- `tags` (optional): Filter by tags
 
-- **✅ Safe**: Read-only operations that don't modify data or schema
-- **⚠️ Modifies data**: Operations that change data but not schema
-- **⚠️ Schema changes**: Operations that modify database structure
-- **❌ Destructive**: Operations that permanently remove data or objects
+## Safety Levels
 
-All destructive operations require explicit confirmation to prevent accidental data loss. 
+- **Safe**: Read-only, no side effects
+- **Modifies data**: Changes data, not schema
+- **Schema changes**: Modifies database structure
+- **Destructive**: Permanently removes data/objects (requires confirmation)
