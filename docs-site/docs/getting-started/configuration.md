@@ -39,6 +39,21 @@ To use DBeaver MCP Server with Claude Desktop, add the following to your configu
 }
 ```
 
+### Read-Only Configuration
+```json
+{
+  "mcpServers": {
+    "dbeaver": {
+      "command": "dbeaver-mcp-server",
+      "env": {
+        "DBEAVER_READ_ONLY": "true",
+        "DBEAVER_TIMEOUT": "30000"
+      }
+    }
+  }
+}
+```
+
 ## Environment Variables
 
 ### Core Variables
@@ -46,6 +61,10 @@ To use DBeaver MCP Server with Claude Desktop, add the following to your configu
 - `DBEAVER_WORKSPACE`: Set a custom path to your DBeaver workspace (useful for non-default workspaces and DBeaver CLI execution)
 - `DBEAVER_TIMEOUT`: Set the query timeout in milliseconds (default: 30000)
 - `DBEAVER_DEBUG`: Set to `true` to enable debug logging
+
+### Security Variables
+- `DBEAVER_READ_ONLY`: Set to `true` to disable all write operations (blocks `write_query`, `create_table`, `alter_table`, `drop_table`)
+- `DBEAVER_DISABLED_TOOLS`: Comma-separated list of tool names to disable (e.g., `drop_table,alter_table`)
 
 ### Platform-Specific Paths
 ```bash
@@ -69,6 +88,14 @@ dbeaver-mcp-server
 # Production with custom timeout
 export DBEAVER_DEBUG=false
 export DBEAVER_TIMEOUT=120000
+dbeaver-mcp-server
+
+# Read-only mode (disable all write operations)
+export DBEAVER_READ_ONLY=true
+dbeaver-mcp-server
+
+# Disable specific tools
+export DBEAVER_DISABLED_TOOLS="drop_table,alter_table"
 dbeaver-mcp-server
 ```
 
