@@ -33,7 +33,7 @@ A production-ready Model Context Protocol (MCP) server that seamlessly integrate
 - **Schema Management**: Complete DDL operations (CREATE, ALTER, DROP)
 - **Data Export**: CSV, JSON, XML, Excel export formats
 - **Performance Monitoring**: Query execution time tracking
-- **Native Execution**: Direct query support for SQLite, PostgreSQL, and MySQL/MySQL8
+- **Native Execution**: Direct query support for PostgreSQL, MySQL/MariaDB, SQLite, and SQL Server/MSSQL
 
 ### 🧠 AI-Powered Intelligence
 - **Business Insights**: Track and store analysis insights with tagging
@@ -134,10 +134,44 @@ npm link  # Makes the command available globally
 ```
 
 ### Environment Variables
-- `DBEAVER_PATH`: Path to DBeaver executable (auto-detected if not set)
-- `DBEAVER_WORKSPACE`: Path to DBeaver workspace directory (defaults to the standard OS location, e.g. `~/Library/DBeaverData/workspace6` on macOS)
-- `DBEAVER_TIMEOUT`: Query timeout in milliseconds (default: 30000)
-- `DBEAVER_DEBUG`: Enable debug logging (true/false)
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DBEAVER_PATH` | Path to DBeaver executable | Auto-detected |
+| `DBEAVER_WORKSPACE` | Path to DBeaver workspace directory | OS default |
+| `DBEAVER_TIMEOUT` | Query timeout in milliseconds | `30000` |
+| `DBEAVER_DEBUG` | Enable debug logging | `false` |
+| `DBEAVER_READ_ONLY` | Disable all write operations | `false` |
+| `DBEAVER_DISABLED_TOOLS` | Comma-separated list of tools to disable | None |
+
+### Read-Only Mode
+Enable read-only mode to prevent any write operations:
+```json
+{
+  "mcpServers": {
+    "dbeaver": {
+      "command": "dbeaver-mcp-server",
+      "env": {
+        "DBEAVER_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
+
+### Disable Specific Tools
+Disable specific tools while keeping others enabled:
+```json
+{
+  "mcpServers": {
+    "dbeaver": {
+      "command": "dbeaver-mcp-server",
+      "env": {
+        "DBEAVER_DISABLED_TOOLS": "drop_table,alter_table"
+      }
+    }
+  }
+}
+```
 
 ## 💡 Quick Start Examples
 
@@ -295,7 +329,7 @@ This project is published on npm as `dbeaver-mcp-server`:
 
 - **Package**: [dbeaver-mcp-server](https://www.npmjs.com/package/dbeaver-mcp-server)
 - **Install**: `npm install -g dbeaver-mcp-server`
-- **Current Version**: 1.1.7
+- **Current Version**: 1.2.4
 - **License**: MIT
 - **GitHub**: [srthkdev/dbeaver-mcp-server](https://github.com/srthkdev/dbeaver-mcp-server)
 

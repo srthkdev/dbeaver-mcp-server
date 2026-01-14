@@ -11,7 +11,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { DBeaverConfigParser } from './config-parser.js';
 import { DBeaverClient } from './dbeaver-client.js';
-import { DBeaverConnection, QueryResult, ExportOptions, BusinessInsight, TableResource } from './types.js';
+import { BusinessInsight } from './types.js';
 import { validateQuery, sanitizeConnectionId, formatError, convertToCSV } from './utils.js';
 // CSV functionality will be handled in utils
 import fs from 'fs';
@@ -22,8 +22,13 @@ import { fileURLToPath } from 'url';
 // Get version from package.json
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+const packageJson = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8')
+);
 const VERSION = packageJson.version;
+
+// Tool categories for filtering
+const WRITE_TOOLS = ['write_query', 'create_table', 'alter_table', 'drop_table'];
 
 class DBeaverMCPServer {
   private server: Server;
@@ -32,9 +37,16 @@ class DBeaverMCPServer {
   private debug: boolean;
   private insights: BusinessInsight[] = [];
   private insightsFile: string;
+  private readOnly: boolean;
+  private disabledTools: string[];
 
   constructor() {
     this.debug = process.env.DBEAVER_DEBUG === 'true';
+    this.readOnly = process.env.DBEAVER_READ_ONLY === 'true';
+    this.disabledTools = (process.env.DBEAVER_DISABLED_TOOLS || '')
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
     this.insightsFile = path.join(os.tmpdir(), 'dbeaver-mcp-insights.json');
 
     this.server = new Server(
@@ -54,7 +66,7 @@ class DBeaverMCPServer {
       debug: this.debug,
       timeout: parseInt(process.env.DBEAVER_TIMEOUT || '30000'),
       executablePath: process.env.DBEAVER_PATH,
-      workspacePath: process.env.DBEAVER_WORKSPACE
+      workspacePath: process.env.DBEAVER_WORKSPACE,
     });
 
     this.dbeaverClient = new DBeaverClient(
@@ -136,7 +148,7 @@ class DBeaverMCPServer {
               if (tableName) {
                 resources.push({
                   uri: `dbeaver://${connection.id}/${tableName}/schema`,
-                  mimeType: "application/json",
+                  mimeType: 'application/json',
                   name: `"${tableName}" schema (${connection.name})`,
                   description: `Schema information for table ${tableName} in ${connection.name}`,
                 });
@@ -158,10 +170,10 @@ class DBeaverMCPServer {
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       try {
         const uri = new URL(request.params.uri);
-        const pathParts = uri.pathname.split('/').filter(p => p);
+        const pathParts = uri.pathname.split('/').filter((p) => p);
 
         if (pathParts.length < 2 || pathParts[pathParts.length - 1] !== 'schema') {
-          throw new Error("Invalid resource URI format");
+          throw new Error('Invalid resource URI format');
         }
 
         const connectionId = uri.hostname;
@@ -178,13 +190,16 @@ class DBeaverMCPServer {
           contents: [
             {
               uri: request.params.uri,
-              mimeType: "application/json",
+              mimeType: 'application/json',
               text: JSON.stringify(schema, null, 2),
             },
           ],
         };
       } catch (error) {
-        throw new McpError(ErrorCode.InvalidParams, `Failed to read resource: ${formatError(error)}`);
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Failed to read resource: ${formatError(error)}`
+        );
       }
     });
   }
@@ -201,9 +216,9 @@ class DBeaverMCPServer {
               includeDetails: {
                 type: 'boolean',
                 description: 'Include detailed connection information',
-                default: false
-              }
-            }
+                default: false,
+              },
+            },
           },
         },
         {
@@ -237,8 +252,8 @@ class DBeaverMCPServer {
               maxRows: {
                 type: 'number',
                 description: 'Maximum number of rows to return (default: 1000)',
-                default: 1000
-              }
+                default: 1000,
+              },
             },
             required: ['connectionId', 'query'],
           },
@@ -336,8 +351,8 @@ class DBeaverMCPServer {
               includeIndexes: {
                 type: 'boolean',
                 description: 'Include index information',
-                default: true
-              }
+                default: true,
+              },
             },
             required: ['connectionId', 'tableName'],
           },
@@ -360,18 +375,18 @@ class DBeaverMCPServer {
                 type: 'string',
                 enum: ['csv', 'json', 'xml', 'excel'],
                 description: 'Export format',
-                default: 'csv'
+                default: 'csv',
               },
               includeHeaders: {
                 type: 'boolean',
                 description: 'Include column headers in export',
-                default: true
+                default: true,
               },
               maxRows: {
                 type: 'number',
                 description: 'Maximum number of rows to export',
-                default: 10000
-              }
+                default: 10000,
+              },
             },
             required: ['connectionId', 'query'],
           },
@@ -421,8 +436,8 @@ class DBeaverMCPServer {
               includeViews: {
                 type: 'boolean',
                 description: 'Include views in the results',
-                default: false
-              }
+                default: false,
+              },
             },
             required: ['connectionId'],
           },
@@ -470,11 +485,40 @@ class DBeaverMCPServer {
         },
       ];
 
-      return { tools };
+      // Filter tools based on read-only mode and disabled tools
+      let filteredTools = tools;
+
+      // Remove write tools if read-only mode is enabled
+      if (this.readOnly) {
+        filteredTools = filteredTools.filter((tool) => !WRITE_TOOLS.includes(tool.name));
+      }
+
+      // Remove explicitly disabled tools
+      if (this.disabledTools.length > 0) {
+        filteredTools = filteredTools.filter((tool) => !this.disabledTools.includes(tool.name));
+      }
+
+      return { tools: filteredTools };
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
+
+      // Block write tools if read-only mode is enabled
+      if (this.readOnly && WRITE_TOOLS.includes(name)) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `Tool '${name}' is disabled in read-only mode. Set DBEAVER_READ_ONLY=false to enable write operations.`
+        );
+      }
+
+      // Block explicitly disabled tools
+      if (this.disabledTools.includes(name)) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `Tool '${name}' is disabled via DBEAVER_DISABLED_TOOLS configuration.`
+        );
+      }
 
       try {
         this.log(`Executing tool: ${name} with args: ${JSON.stringify(args)}`, 'debug');
@@ -487,52 +531,66 @@ class DBeaverMCPServer {
             return await this.handleGetConnectionInfo(args as { connectionId: string });
 
           case 'execute_query':
-            return await this.handleExecuteQuery(args as {
-              connectionId: string;
-              query: string;
-              maxRows?: number
-            });
+            return await this.handleExecuteQuery(
+              args as {
+                connectionId: string;
+                query: string;
+                maxRows?: number;
+              }
+            );
 
           case 'write_query':
-            return await this.handleWriteQuery(args as {
-              connectionId: string;
-              query: string;
-            });
+            return await this.handleWriteQuery(
+              args as {
+                connectionId: string;
+                query: string;
+              }
+            );
 
           case 'create_table':
-            return await this.handleCreateTable(args as {
-              connectionId: string;
-              query: string;
-            });
+            return await this.handleCreateTable(
+              args as {
+                connectionId: string;
+                query: string;
+              }
+            );
 
           case 'alter_table':
-            return await this.handleAlterTable(args as {
-              connectionId: string;
-              query: string;
-            });
+            return await this.handleAlterTable(
+              args as {
+                connectionId: string;
+                query: string;
+              }
+            );
 
           case 'drop_table':
-            return await this.handleDropTable(args as {
-              connectionId: string;
-              tableName: string;
-              confirm: boolean
-            });
+            return await this.handleDropTable(
+              args as {
+                connectionId: string;
+                tableName: string;
+                confirm: boolean;
+              }
+            );
 
           case 'get_table_schema':
-            return await this.handleGetTableSchema(args as {
-              connectionId: string;
-              tableName: string;
-              includeIndexes?: boolean
-            });
+            return await this.handleGetTableSchema(
+              args as {
+                connectionId: string;
+                tableName: string;
+                includeIndexes?: boolean;
+              }
+            );
 
           case 'export_data':
-            return await this.handleExportData(args as {
-              connectionId: string;
-              query: string;
-              format?: string;
-              includeHeaders?: boolean;
-              maxRows?: number
-            });
+            return await this.handleExportData(
+              args as {
+                connectionId: string;
+                query: string;
+                format?: string;
+                includeHeaders?: boolean;
+                maxRows?: number;
+              }
+            );
 
           case 'test_connection':
             return await this.handleTestConnection(args as { connectionId: string });
@@ -541,24 +599,30 @@ class DBeaverMCPServer {
             return await this.handleGetDatabaseStats(args as { connectionId: string });
 
           case 'list_tables':
-            return await this.handleListTables(args as {
-              connectionId: string;
-              schema?: string;
-              includeViews?: boolean
-            });
+            return await this.handleListTables(
+              args as {
+                connectionId: string;
+                schema?: string;
+                includeViews?: boolean;
+              }
+            );
 
           case 'append_insight':
-            return await this.handleAppendInsight(args as {
-              insight: string;
-              connection?: string;
-              tags?: string[]
-            });
+            return await this.handleAppendInsight(
+              args as {
+                insight: string;
+                connection?: string;
+                tags?: string[];
+              }
+            );
 
           case 'list_insights':
-            return await this.handleListInsights(args as {
-              connection?: string;
-              tags?: string[]
-            });
+            return await this.handleListInsights(
+              args as {
+                connection?: string;
+                tags?: string[];
+              }
+            );
 
           default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
@@ -570,10 +634,7 @@ class DBeaverMCPServer {
           throw error;
         }
 
-        throw new McpError(
-          ErrorCode.InternalError,
-          `Tool execution failed: ${formatError(error)}`
-        );
+        throw new McpError(ErrorCode.InternalError, `Tool execution failed: ${formatError(error)}`);
       }
     });
   }
@@ -583,27 +644,31 @@ class DBeaverMCPServer {
 
     if (args.includeDetails) {
       return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(connections, null, 2),
-        }],
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(connections, null, 2),
+          },
+        ],
       };
     }
 
-    const simplified = connections.map(conn => ({
+    const simplified = connections.map((conn) => ({
       id: conn.id,
       name: conn.name,
       driver: conn.driver,
       host: conn.host,
       database: conn.database,
-      folder: conn.folder
+      folder: conn.folder,
     }));
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify(simplified, null, 2),
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(simplified, null, 2),
+        },
+      ],
     };
   }
 
@@ -616,17 +681,19 @@ class DBeaverMCPServer {
     }
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify(connection, null, 2),
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(connection, null, 2),
+        },
+      ],
     };
   }
 
   private async handleExecuteQuery(args: {
     connectionId: string;
     query: string;
-    maxRows?: number
+    maxRows?: number;
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
@@ -649,10 +716,15 @@ class DBeaverMCPServer {
 
     if (lowerQuery.startsWith('select')) {
       const driver = connection.driver.toLowerCase();
-      const isSqlServer = driver.includes('mssql') || driver.includes('sqlserver') || driver.includes('microsoft');
+      const isSqlServer =
+        driver.includes('mssql') || driver.includes('sqlserver') || driver.includes('microsoft');
 
       if (isSqlServer) {
-        if (!lowerQuery.includes('top ') && !lowerQuery.includes('offset ') && !lowerQuery.includes('fetch next')) {
+        if (
+          !lowerQuery.includes('top ') &&
+          !lowerQuery.includes('offset ') &&
+          !lowerQuery.includes('fetch next')
+        ) {
           // Simple injection of TOP for SQL Server
           finalQuery = query.replace(/^select/i, `SELECT TOP ${maxRows}`);
         }
@@ -674,14 +746,16 @@ class DBeaverMCPServer {
       rowCount: result.rowCount,
       columns: result.columns,
       rows: result.rows,
-      truncated: result.rows.length >= maxRows
+      truncated: result.rows.length >= maxRows,
     };
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify(response, null, 2),
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(response, null, 2),
+        },
+      ],
     };
   }
 
@@ -695,8 +769,17 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, 'Use execute_query for SELECT operations');
     }
 
-    if (!(lowerQuery.startsWith('insert') || lowerQuery.startsWith('update') || lowerQuery.startsWith('delete'))) {
-      throw new McpError(ErrorCode.InvalidParams, 'Only INSERT, UPDATE, or DELETE operations are allowed with write_query');
+    if (
+      !(
+        lowerQuery.startsWith('insert') ||
+        lowerQuery.startsWith('update') ||
+        lowerQuery.startsWith('delete')
+      )
+    ) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'Only INSERT, UPDATE, or DELETE operations are allowed with write_query'
+      );
     }
 
     // Additional validation
@@ -717,14 +800,16 @@ class DBeaverMCPServer {
       connection: connection.name,
       executionTime: result.executionTime,
       affectedRows: result.rowCount,
-      success: true
+      success: true,
     };
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify(response, null, 2),
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(response, null, 2),
+        },
+      ],
     };
   }
 
@@ -744,14 +829,20 @@ class DBeaverMCPServer {
     const result = await this.dbeaverClient.executeQuery(connection, query);
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
-          success: true,
-          message: 'Table created successfully',
-          executionTime: result.executionTime
-        }, null, 2),
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(
+            {
+              success: true,
+              message: 'Table created successfully',
+              executionTime: result.executionTime,
+            },
+            null,
+            2
+          ),
+        },
+      ],
     };
   }
 
@@ -771,18 +862,28 @@ class DBeaverMCPServer {
     const result = await this.dbeaverClient.executeQuery(connection, query);
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
-          success: true,
-          message: 'Table altered successfully',
-          executionTime: result.executionTime
-        }, null, 2),
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(
+            {
+              success: true,
+              message: 'Table altered successfully',
+              executionTime: result.executionTime,
+            },
+            null,
+            2
+          ),
+        },
+      ],
     };
   }
 
-  private async handleDropTable(args: { connectionId: string; tableName: string; confirm: boolean }) {
+  private async handleDropTable(args: {
+    connectionId: string;
+    tableName: string;
+    confirm: boolean;
+  }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const tableName = args.tableName;
 
@@ -792,13 +893,20 @@ class DBeaverMCPServer {
 
     if (!args.confirm) {
       return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify({
-            success: false,
-            message: 'Safety confirmation required. Set confirm=true to proceed with dropping the table.'
-          }, null, 2),
-        }],
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(
+              {
+                success: false,
+                message:
+                  'Safety confirmation required. Set confirm=true to proceed with dropping the table.',
+              },
+              null,
+              2
+            ),
+          },
+        ],
       };
     }
 
@@ -810,29 +918,38 @@ class DBeaverMCPServer {
     // Check if table exists first
     try {
       await this.dbeaverClient.getTableSchema(connection, tableName);
-    } catch (error) {
-      throw new McpError(ErrorCode.InvalidParams, `Table '${tableName}' does not exist or cannot be accessed`);
+    } catch {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Table '${tableName}' does not exist or cannot be accessed`
+      );
     }
 
     const dropQuery = `DROP TABLE "${tableName}"`;
     const result = await this.dbeaverClient.executeQuery(connection, dropQuery);
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
-          success: true,
-          message: `Table '${tableName}' dropped successfully`,
-          executionTime: result.executionTime
-        }, null, 2),
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(
+            {
+              success: true,
+              message: `Table '${tableName}' dropped successfully`,
+              executionTime: result.executionTime,
+            },
+            null,
+            2
+          ),
+        },
+      ],
     };
   }
 
   private async handleGetTableSchema(args: {
     connectionId: string;
     tableName: string;
-    includeIndexes?: boolean
+    includeIndexes?: boolean;
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const connection = await this.configParser.getConnection(connectionId);
@@ -848,10 +965,12 @@ class DBeaverMCPServer {
     }
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify(schema, null, 2),
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(schema, null, 2),
+        },
+      ],
     };
   }
 
@@ -860,7 +979,7 @@ class DBeaverMCPServer {
     query: string;
     format?: string;
     includeHeaders?: boolean;
-    maxRows?: number
+    maxRows?: number;
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
@@ -889,13 +1008,15 @@ class DBeaverMCPServer {
     if (format === 'csv') {
       const csvData = convertToCSV(result.columns, result.rows);
       return {
-        content: [{
-          type: 'text' as const,
-          text: csvData,
-        }],
+        content: [
+          {
+            type: 'text' as const,
+            text: csvData,
+          },
+        ],
       };
     } else if (format === 'json') {
-      const jsonData = result.rows.map(row => {
+      const jsonData = result.rows.map((row) => {
         const obj: any = {};
         result.columns.forEach((col, idx) => {
           obj[col] = row[idx];
@@ -904,13 +1025,18 @@ class DBeaverMCPServer {
       });
 
       return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(jsonData, null, 2),
-        }],
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(jsonData, null, 2),
+          },
+        ],
       };
     } else {
-      throw new McpError(ErrorCode.InvalidParams, `Unsupported export format: ${format}. Use 'csv' or 'json'`);
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Unsupported export format: ${format}. Use 'csv' or 'json'`
+      );
     }
   }
 
@@ -925,10 +1051,12 @@ class DBeaverMCPServer {
     const testResult = await this.dbeaverClient.testConnection(connection);
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify(testResult, null, 2),
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(testResult, null, 2),
+        },
+      ],
     };
   }
 
@@ -943,17 +1071,19 @@ class DBeaverMCPServer {
     const stats = await this.dbeaverClient.getDatabaseStats(connection);
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify(stats, null, 2),
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(stats, null, 2),
+        },
+      ],
     };
   }
 
   private async handleListTables(args: {
     connectionId: string;
     schema?: string;
-    includeViews?: boolean
+    includeViews?: boolean;
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const connection = await this.configParser.getConnection(connectionId);
@@ -969,14 +1099,20 @@ class DBeaverMCPServer {
     );
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify(tables, null, 2),
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(tables, null, 2),
+        },
+      ],
     };
   }
 
-  private async handleAppendInsight(args: { insight: string; connection?: string; tags?: string[] }) {
+  private async handleAppendInsight(args: {
+    insight: string;
+    connection?: string;
+    tags?: string[];
+  }) {
     if (!args.insight || args.insight.trim().length === 0) {
       throw new McpError(ErrorCode.InvalidParams, 'Insight text is required');
     }
@@ -986,21 +1122,27 @@ class DBeaverMCPServer {
       insight: args.insight.trim(),
       created_at: new Date().toISOString(),
       connection: args.connection,
-      tags: args.tags || []
+      tags: args.tags || [],
     };
 
     this.insights.push(newInsight);
     this.saveInsights();
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
-          success: true,
-          message: 'Insight added successfully',
-          id: newInsight.id
-        }, null, 2),
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(
+            {
+              success: true,
+              message: 'Insight added successfully',
+              id: newInsight.id,
+            },
+            null,
+            2
+          ),
+        },
+      ],
     };
   }
 
@@ -1008,22 +1150,24 @@ class DBeaverMCPServer {
     let filteredInsights = [...this.insights];
 
     if (args.connection) {
-      filteredInsights = filteredInsights.filter(insight =>
-        insight.connection === args.connection
+      filteredInsights = filteredInsights.filter(
+        (insight) => insight.connection === args.connection
       );
     }
 
     if (args.tags && args.tags.length > 0) {
-      filteredInsights = filteredInsights.filter(insight =>
-        insight.tags && args.tags!.some(tag => insight.tags!.includes(tag))
+      filteredInsights = filteredInsights.filter(
+        (insight) => insight.tags && args.tags!.some((tag) => insight.tags!.includes(tag))
       );
     }
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify(filteredInsights, null, 2),
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(filteredInsights, null, 2),
+        },
+      ],
     };
   }
 
@@ -1031,8 +1175,14 @@ class DBeaverMCPServer {
     try {
       // Validate DBeaver workspace
       if (!this.configParser.isWorkspaceValid()) {
-        this.log('DBeaver workspace not found. Please run DBeaver at least once to create the workspace.', 'error');
-        this.log('The server will start but will not be able to access any database connections.', 'error');
+        this.log(
+          'DBeaver workspace not found. Please run DBeaver at least once to create the workspace.',
+          'error'
+        );
+        this.log(
+          'The server will start but will not be able to access any database connections.',
+          'error'
+        );
       }
 
       const transport = new StdioServerTransport();
@@ -1044,7 +1194,6 @@ class DBeaverMCPServer {
         const debugInfo = this.configParser.getDebugInfo();
         this.log(`Debug info: ${JSON.stringify(debugInfo, null, 2)}`, 'debug');
       }
-
     } catch (error) {
       this.log(`Failed to start server: ${formatError(error)}`, 'error');
       process.exit(1);

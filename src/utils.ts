@@ -43,7 +43,7 @@ export function findDBeaverExecutable(): string {
       try {
         fs.accessSync(dbPath, fs.constants.X_OK);
         return dbPath;
-      } catch (error) {
+      } catch {
         // Not executable, continue searching
         continue;
       }
@@ -65,7 +65,7 @@ export function validateQuery(query: string): string | null {
   }
 
   const trimmedQuery = query.trim().toLowerCase();
-  
+
   // Block potentially dangerous operations
   const dangerousPatterns = [
     /drop\s+database/i,
@@ -79,7 +79,7 @@ export function validateQuery(query: string): string | null {
     /drop\s+user/i,
     /alter\s+user/i,
     /shutdown/i,
-    /restart/i
+    /restart/i,
   ];
 
   for (const pattern of dangerousPatterns) {
@@ -95,7 +95,7 @@ export function validateQuery(query: string): string | null {
     /^delete\s+/i,
     /^create\s+/i,
     /^alter\s+/i,
-    /^drop\s+/i
+    /^drop\s+/i,
   ];
 
   for (const pattern of modifyingPatterns) {
@@ -117,8 +117,8 @@ export function sanitizeConnectionId(connectionId: string): string {
   }
 
   // Remove potentially dangerous characters
-  const sanitized = connectionId.replace(/[^a-zA-Z0-9_\-\.]/g, '');
-  
+  const sanitized = connectionId.replace(/[^a-zA-Z0-9_\-.]/g, '');
+
   if (sanitized.length === 0) {
     throw new Error('Connection ID contains no valid characters');
   }
@@ -133,11 +133,11 @@ export function formatError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
-  
+
   if (typeof error === 'string') {
     return error;
   }
-  
+
   return String(error);
 }
 
@@ -146,7 +146,7 @@ export function formatError(error: unknown): string {
  */
 export function getTestQuery(driver: string): string {
   const driverLower = driver.toLowerCase();
-  
+
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
     return 'SELECT version();';
   } else if (driverLower.includes('mysql')) {
@@ -172,7 +172,7 @@ export function getTestQuery(driver: string): string {
  */
 export function buildSchemaQuery(driver: string, tableName: string): string {
   const driverLower = driver.toLowerCase();
-  
+
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
     return `
       SELECT 
@@ -250,9 +250,13 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
 /**
  * Build list tables query based on database driver
  */
-export function buildListTablesQuery(driver: string, schema?: string, includeViews: boolean = false): string {
+export function buildListTablesQuery(
+  driver: string,
+  schema?: string,
+  includeViews: boolean = false
+): string {
   const driverLower = driver.toLowerCase();
-  
+
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
     let query = `
       SELECT 
@@ -262,18 +266,17 @@ export function buildListTablesQuery(driver: string, schema?: string, includeVie
       FROM information_schema.tables 
       WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
     `;
-    
+
     if (schema) {
       query += ` AND table_schema = '${schema}'`;
     }
-    
+
     if (!includeViews) {
       query += ` AND table_type = 'BASE TABLE'`;
     }
-    
+
     query += ` ORDER BY table_schema, table_name;`;
     return query;
-    
   } else if (driverLower.includes('mysql')) {
     let query = `
       SELECT 
@@ -283,20 +286,19 @@ export function buildListTablesQuery(driver: string, schema?: string, includeVie
       FROM information_schema.TABLES 
       WHERE TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
     `;
-    
+
     if (schema) {
       query += ` AND TABLE_SCHEMA = '${schema}'`;
     }
-    
+
     if (!includeViews) {
       query += ` AND TABLE_TYPE = 'BASE TABLE'`;
     }
-    
+
     query += ` ORDER BY TABLE_SCHEMA, TABLE_NAME;`;
     return query;
-    
   } else if (driverLower.includes('sqlite')) {
-    let query = `
+    const query = `
       SELECT 
         name as table_name,
         type as table_type
@@ -306,7 +308,6 @@ export function buildListTablesQuery(driver: string, schema?: string, includeVie
       ORDER BY name;
     `;
     return query;
-    
   } else if (driverLower.includes('oracle')) {
     let query = `
       SELECT 
@@ -315,11 +316,11 @@ export function buildListTablesQuery(driver: string, schema?: string, includeVie
         owner as table_schema
       FROM all_tables
     `;
-    
+
     if (schema) {
       query += ` WHERE owner = UPPER('${schema}')`;
     }
-    
+
     if (includeViews) {
       query += `
         UNION ALL
@@ -329,15 +330,14 @@ export function buildListTablesQuery(driver: string, schema?: string, includeVie
           owner as table_schema
         FROM all_views
       `;
-      
+
       if (schema) {
         query += ` WHERE owner = UPPER('${schema}')`;
       }
     }
-    
+
     query += ` ORDER BY table_name;`;
     return query;
-    
   } else {
     // Generic fallback
     let query = `
@@ -347,15 +347,15 @@ export function buildListTablesQuery(driver: string, schema?: string, includeVie
         table_schema
       FROM information_schema.tables
     `;
-    
+
     if (schema) {
       query += ` WHERE table_schema = '${schema}'`;
     }
-    
+
     if (!includeViews) {
       query += `${schema ? ' AND' : ' WHERE'} table_type = 'BASE TABLE'`;
     }
-    
+
     query += ` ORDER BY table_schema, table_name;`;
     return query;
   }
@@ -384,18 +384,18 @@ export function parseVersionFromResult(result: any): string | undefined {
  */
 export function convertToCSV(columns: string[], rows: any[][]): string {
   if (rows.length === 0) return '';
-  
+
   // Create CSV header row
-  let csv = columns.map(col => `"${col.replace(/"/g, '""')}"`).join(',') + '\n';
-  
+  let csv = columns.map((col) => `"${col.replace(/"/g, '""')}"`).join(',') + '\n';
+
   // Add data rows
-  rows.forEach(row => {
-    const values = row.map(val => {
+  rows.forEach((row) => {
+    const values = row.map((val) => {
       // Handle null/undefined values
       if (val === null || val === undefined) {
         return '';
       }
-      
+
       // Convert to string and escape quotes
       const strVal = String(val);
       if (strVal.includes(',') || strVal.includes('"') || strVal.includes('\n')) {
@@ -405,6 +405,6 @@ export function convertToCSV(columns: string[], rows: any[][]): string {
     });
     csv += values.join(',') + '\n';
   });
-  
+
   return csv;
 }

@@ -1,0 +1,61 @@
+name: Bug Report
+description: Report a bug or issue
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please fill out the info below.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version are you using?
+      placeholder: "1.2.4"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database Type
+      options:
+        - PostgreSQL
+        - MySQL
+        - SQLite
+        - SQL Server / MSSQL
+        - Oracle
+        - MongoDB
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error logs
+      description: Paste any error messages (run with DBEAVER_DEBUG=true)
+      render: shell
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I'm using the latest version
+        - label: I searched existing issues
