@@ -11,9 +11,12 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { DBeaverConfigParser } from './config-parser.js';
 import { DBeaverClient } from './dbeaver-client.js';
-import { BusinessInsight } from './types.js';
+import { BusinessInsight, SchemaDiff } from './types.js';
 import { validateQuery, sanitizeConnectionId, formatError, convertToCSV } from './utils.js';
-// CSV functionality will be handled in utils
+import { ConnectionPoolManager } from './pools/index.js';
+import { TransactionManager } from './managers/index.js';
+import { buildExplainQuery, parseExplainOutput } from './utils/query-analyzer.js';
+import { compareSchemas, parseTableSchema, generateMigrationScript } from './utils/schema-diff.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -40,6 +43,8 @@ class DBeaverMCPServer {
   private server: Server;
   private configParser: DBeaverConfigParser;
   private dbeaverClient: DBeaverClient;
+  private poolManager: ConnectionPoolManager;
+  private transactionManager: TransactionManager;
   private debug: boolean;
   private insights: BusinessInsight[] = [];
   private insightsFile: string;
@@ -81,6 +86,18 @@ class DBeaverMCPServer {
       this.debug,
       process.env.DBEAVER_WORKSPACE || this.configParser.getWorkspacePath()
     );
+
+    // Initialize connection pool and transaction manager
+    this.poolManager = new ConnectionPoolManager(
+      {
+        min: parseInt(process.env.DBEAVER_POOL_MIN || '2'),
+        max: parseInt(process.env.DBEAVER_POOL_MAX || '10'),
+        idleTimeoutMs: parseInt(process.env.DBEAVER_POOL_IDLE_TIMEOUT || '30000'),
+        acquireTimeoutMs: parseInt(process.env.DBEAVER_POOL_ACQUIRE_TIMEOUT || '10000'),
+      },
+      this.debug
+    );
+    this.transactionManager = new TransactionManager(this.poolManager, this.debug);
 
     this.loadInsights();
     this.setupResourceHandlers();
@@ -489,6 +506,136 @@ class DBeaverMCPServer {
             },
           },
         },
+        // Transaction tools
+        {
+          name: 'begin_transaction',
+          description: 'Start a new database transaction',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              connectionId: {
+                type: 'string',
+                description: 'The ID or name of the DBeaver connection',
+              },
+            },
+            required: ['connectionId'],
+          },
+        },
+        {
+          name: 'commit_transaction',
+          description: 'Commit an active transaction',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              transactionId: {
+                type: 'string',
+                description: 'The transaction ID returned by begin_transaction',
+              },
+            },
+            required: ['transactionId'],
+          },
+        },
+        {
+          name: 'rollback_transaction',
+          description: 'Rollback an active transaction',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              transactionId: {
+                type: 'string',
+                description: 'The transaction ID returned by begin_transaction',
+              },
+            },
+            required: ['transactionId'],
+          },
+        },
+        {
+          name: 'execute_in_transaction',
+          description: 'Execute a query within an active transaction',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              transactionId: {
+                type: 'string',
+                description: 'The transaction ID returned by begin_transaction',
+              },
+              query: {
+                type: 'string',
+                description: 'The SQL query to execute',
+              },
+            },
+            required: ['transactionId', 'query'],
+          },
+        },
+        // Query analysis tools
+        {
+          name: 'explain_query',
+          description: 'Get the execution plan for a SQL query',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              connectionId: {
+                type: 'string',
+                description: 'The ID or name of the DBeaver connection',
+              },
+              query: {
+                type: 'string',
+                description: 'The SQL query to analyze',
+              },
+              analyze: {
+                type: 'boolean',
+                description: 'Run EXPLAIN ANALYZE for actual execution stats',
+                default: false,
+              },
+              format: {
+                type: 'string',
+                enum: ['text', 'json'],
+                description: 'Output format for the execution plan',
+                default: 'text',
+              },
+            },
+            required: ['connectionId', 'query'],
+          },
+        },
+        // Schema comparison tools
+        {
+          name: 'compare_schemas',
+          description: 'Compare schemas between two database connections',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              sourceConnectionId: {
+                type: 'string',
+                description: 'The source connection ID to compare from',
+              },
+              targetConnectionId: {
+                type: 'string',
+                description: 'The target connection ID to compare to',
+              },
+              includeMigrationScript: {
+                type: 'boolean',
+                description: 'Generate SQL migration script',
+                default: false,
+              },
+            },
+            required: ['sourceConnectionId', 'targetConnectionId'],
+          },
+        },
+        // Pool management tools
+        {
+          name: 'get_pool_stats',
+          description: 'Get connection pool statistics for a connection',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              connectionId: {
+                type: 'string',
+                description: 'The ID or name of the DBeaver connection',
+              },
+            },
+            required: ['connectionId'],
+          },
+        },
       ];
 
       // Filter tools based on read-only mode and disabled tools
@@ -629,6 +776,46 @@ class DBeaverMCPServer {
                 tags?: string[];
               }
             );
+
+          // Transaction tools
+          case 'begin_transaction':
+            return await this.handleBeginTransaction(args as { connectionId: string });
+
+          case 'commit_transaction':
+            return await this.handleCommitTransaction(args as { transactionId: string });
+
+          case 'rollback_transaction':
+            return await this.handleRollbackTransaction(args as { transactionId: string });
+
+          case 'execute_in_transaction':
+            return await this.handleExecuteInTransaction(
+              args as { transactionId: string; query: string }
+            );
+
+          // Query analysis tools
+          case 'explain_query':
+            return await this.handleExplainQuery(
+              args as {
+                connectionId: string;
+                query: string;
+                analyze?: boolean;
+                format?: 'text' | 'json';
+              }
+            );
+
+          // Schema comparison tools
+          case 'compare_schemas':
+            return await this.handleCompareSchemas(
+              args as {
+                sourceConnectionId: string;
+                targetConnectionId: string;
+                includeMigrationScript?: boolean;
+              }
+            );
+
+          // Pool management tools
+          case 'get_pool_stats':
+            return await this.handleGetPoolStats(args as { connectionId: string });
 
           default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
@@ -1174,6 +1361,217 @@ class DBeaverMCPServer {
         {
           type: 'text' as const,
           text: JSON.stringify(filteredInsights, null, 2),
+        },
+      ],
+    };
+  }
+
+  // Transaction handlers
+  private async handleBeginTransaction(args: { connectionId: string }) {
+    const connectionId = sanitizeConnectionId(args.connectionId);
+    const connection = await this.configParser.getConnection(connectionId);
+
+    if (!connection) {
+      throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
+    }
+
+    const result = await this.transactionManager.beginTransaction(connection);
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(result, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async handleCommitTransaction(args: { transactionId: string }) {
+    const result = await this.transactionManager.commitTransaction(args.transactionId);
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(result, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async handleRollbackTransaction(args: { transactionId: string }) {
+    const result = await this.transactionManager.rollbackTransaction(args.transactionId);
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(result, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async handleExecuteInTransaction(args: { transactionId: string; query: string }) {
+    const validationError = validateQuery(args.query);
+    if (validationError) {
+      throw new McpError(ErrorCode.InvalidParams, validationError);
+    }
+
+    const result = await this.transactionManager.executeInTransaction(
+      args.transactionId,
+      args.query
+    );
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(result, null, 2),
+        },
+      ],
+    };
+  }
+
+  // Query analysis handlers
+  private async handleExplainQuery(args: {
+    connectionId: string;
+    query: string;
+    analyze?: boolean;
+    format?: 'text' | 'json';
+  }) {
+    const connectionId = sanitizeConnectionId(args.connectionId);
+    const connection = await this.configParser.getConnection(connectionId);
+
+    if (!connection) {
+      throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
+    }
+
+    const format = args.format || 'text';
+    const explainQuery = buildExplainQuery(
+      connection.driver,
+      args.query,
+      args.analyze || false,
+      format
+    );
+
+    const result = await this.dbeaverClient.executeQuery(connection, explainQuery);
+    const explainResult = parseExplainOutput(connection.driver, result.rows, args.query, format);
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(explainResult, null, 2),
+        },
+      ],
+    };
+  }
+
+  // Schema comparison handlers
+  private async handleCompareSchemas(args: {
+    sourceConnectionId: string;
+    targetConnectionId: string;
+    includeMigrationScript?: boolean;
+  }) {
+    const sourceConnId = sanitizeConnectionId(args.sourceConnectionId);
+    const targetConnId = sanitizeConnectionId(args.targetConnectionId);
+
+    const sourceConn = await this.configParser.getConnection(sourceConnId);
+    const targetConn = await this.configParser.getConnection(targetConnId);
+
+    if (!sourceConn) {
+      throw new McpError(ErrorCode.InvalidParams, `Source connection not found: ${sourceConnId}`);
+    }
+    if (!targetConn) {
+      throw new McpError(ErrorCode.InvalidParams, `Target connection not found: ${targetConnId}`);
+    }
+
+    // Get tables from both connections
+    const sourceTables = await this.dbeaverClient.listTables(sourceConn);
+    const targetTables = await this.dbeaverClient.listTables(targetConn);
+
+    // Get schema for each table and convert to comparable format
+    const sourceSchemas = await Promise.all(
+      sourceTables.map(async (table) => {
+        const schema = await this.dbeaverClient.getTableSchema(sourceConn, table.name);
+        // Convert SchemaInfo columns to the format expected by parseTableSchema
+        const rows = schema.columns.map((col) => [
+          col.name,
+          col.type,
+          col.nullable ? 'YES' : 'NO',
+          col.defaultValue || null,
+        ]);
+        const columns = ['column_name', 'data_type', 'is_nullable', 'column_default'];
+        return parseTableSchema(table.name, rows, columns);
+      })
+    );
+
+    const targetSchemas = await Promise.all(
+      targetTables.map(async (table) => {
+        const schema = await this.dbeaverClient.getTableSchema(targetConn, table.name);
+        const rows = schema.columns.map((col) => [
+          col.name,
+          col.type,
+          col.nullable ? 'YES' : 'NO',
+          col.defaultValue || null,
+        ]);
+        const columns = ['column_name', 'data_type', 'is_nullable', 'column_default'];
+        return parseTableSchema(table.name, rows, columns);
+      })
+    );
+
+    const diff = await compareSchemas(sourceSchemas, targetSchemas, sourceConnId, targetConnId);
+
+    const response: { diff: SchemaDiff; migrationScript?: string } = { diff };
+
+    if (args.includeMigrationScript) {
+      response.migrationScript = generateMigrationScript(diff, targetConn.driver);
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(response, null, 2),
+        },
+      ],
+    };
+  }
+
+  // Pool management handlers
+  private async handleGetPoolStats(args: { connectionId: string }) {
+    const connectionId = sanitizeConnectionId(args.connectionId);
+    const connection = await this.configParser.getConnection(connectionId);
+
+    if (!connection) {
+      throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
+    }
+
+    // Initialize pool if needed
+    await this.poolManager.getPool(connection);
+    const stats = await this.poolManager.getStats(connectionId);
+
+    if (!stats) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              connectionId,
+              message: 'No pool available for this connection type',
+            }),
+          },
+        ],
+      };
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(stats, null, 2),
         },
       ],
     };

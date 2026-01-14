@@ -1,0 +1,244 @@
+import { Pool as PgPool } from 'pg';
+import mysql, { Pool as MySqlPool } from 'mysql2/promise';
+import sql, { ConnectionPool as MssqlPool } from 'mssql';
+import { DBeaverConnection, PoolConfig, PoolStats } from '../types.js';
+
+const DEFAULT_POOL_CONFIG: PoolConfig = {
+  min: 2,
+  max: 10,
+  idleTimeoutMs: 30000,
+  acquireTimeoutMs: 10000,
+};
+
+interface PoolEntry {
+  pool: PgPool | MySqlPool | MssqlPool;
+  type: 'postgres' | 'mysql' | 'mssql';
+  config: PoolConfig;
+  createdAt: Date;
+}
+
+export class ConnectionPoolManager {
+  private pools: Map<string, PoolEntry> = new Map();
+  private config: PoolConfig;
+  private debug: boolean;
+
+  constructor(config?: Partial<PoolConfig>, debug = false) {
+    this.config = { ...DEFAULT_POOL_CONFIG, ...config };
+    this.debug = debug;
+  }
+
+  private log(message: string): void {
+    if (this.debug) {
+      console.error(`[ConnectionPool] ${message}`);
+    }
+  }
+
+  async getPool(connection: DBeaverConnection): Promise<PoolEntry | null> {
+    const poolKey = connection.id;
+
+    if (this.pools.has(poolKey)) {
+      this.log(`Reusing existing pool for ${connection.name}`);
+      return this.pools.get(poolKey)!;
+    }
+
+    const driver = connection.driver.toLowerCase();
+
+    try {
+      if (driver.includes('postgres')) {
+        return await this.createPostgresPool(connection);
+      } else if (driver.includes('mysql') || driver.includes('mariadb')) {
+        return await this.createMysqlPool(connection);
+      } else if (driver.includes('mssql') || driver.includes('sqlserver')) {
+        return await this.createMssqlPool(connection);
+      }
+    } catch (error) {
+      this.log(`Failed to create pool for ${connection.name}: ${error}`);
+      throw error;
+    }
+
+    return null;
+  }
+
+  private async createPostgresPool(connection: DBeaverConnection): Promise<PoolEntry> {
+    this.log(`Creating PostgreSQL pool for ${connection.name}`);
+
+    const sslConfig = this.getPostgresSslConfig(connection);
+
+    const pool = new PgPool({
+      host: connection.host,
+      port: connection.port || 5432,
+      database: connection.database,
+      user: connection.user,
+      password: connection.properties?.password,
+      min: this.config.min,
+      max: this.config.max,
+      idleTimeoutMillis: this.config.idleTimeoutMs,
+      connectionTimeoutMillis: this.config.acquireTimeoutMs,
+      ...sslConfig,
+    });
+
+    const entry: PoolEntry = {
+      pool,
+      type: 'postgres',
+      config: this.config,
+      createdAt: new Date(),
+    };
+
+    this.pools.set(connection.id, entry);
+    return entry;
+  }
+
+  private getPostgresSslConfig(connection: DBeaverConnection): object {
+    const props = connection.properties || {};
+    const sslMode = props.sslmode || props.ssl;
+
+    if (sslMode === 'disable' || sslMode === 'false') {
+      return { ssl: false };
+    }
+
+    if (
+      sslMode === 'require' ||
+      sslMode === 'true' ||
+      sslMode === 'verify-ca' ||
+      sslMode === 'verify-full'
+    ) {
+      return {
+        ssl: {
+          rejectUnauthorized: sslMode === 'verify-full',
+        },
+      };
+    }
+
+    // Default: try SSL but don't require it
+    return { ssl: { rejectUnauthorized: false } };
+  }
+
+  private async createMysqlPool(connection: DBeaverConnection): Promise<PoolEntry> {
+    this.log(`Creating MySQL pool for ${connection.name}`);
+
+    const pool = mysql.createPool({
+      host: connection.host,
+      port: connection.port || 3306,
+      database: connection.database,
+      user: connection.user,
+      password: connection.properties?.password,
+      connectionLimit: this.config.max,
+      waitForConnections: true,
+      queueLimit: 0,
+      connectTimeout: this.config.acquireTimeoutMs,
+    });
+
+    const entry: PoolEntry = {
+      pool,
+      type: 'mysql',
+      config: this.config,
+      createdAt: new Date(),
+    };
+
+    this.pools.set(connection.id, entry);
+    return entry;
+  }
+
+  private async createMssqlPool(connection: DBeaverConnection): Promise<PoolEntry> {
+    this.log(`Creating MSSQL pool for ${connection.name}`);
+
+    const pool = new sql.ConnectionPool({
+      server: connection.host || 'localhost',
+      port: connection.port || 1433,
+      database: connection.database,
+      user: connection.user,
+      password: connection.properties?.password,
+      pool: {
+        min: this.config.min,
+        max: this.config.max,
+        idleTimeoutMillis: this.config.idleTimeoutMs,
+        acquireTimeoutMillis: this.config.acquireTimeoutMs,
+      },
+      options: {
+        encrypt: true,
+        trustServerCertificate: true,
+      },
+    });
+
+    await pool.connect();
+
+    const entry: PoolEntry = {
+      pool,
+      type: 'mssql',
+      config: this.config,
+      createdAt: new Date(),
+    };
+
+    this.pools.set(connection.id, entry);
+    return entry;
+  }
+
+  async getStats(connectionId: string): Promise<PoolStats | null> {
+    const entry = this.pools.get(connectionId);
+    if (!entry) return null;
+
+    const stats: PoolStats = {
+      connectionId,
+      totalConnections: 0,
+      idleConnections: 0,
+      activeConnections: 0,
+      waitingRequests: 0,
+    };
+
+    if (entry.type === 'postgres') {
+      const pgPool = entry.pool as PgPool;
+      stats.totalConnections = pgPool.totalCount;
+      stats.idleConnections = pgPool.idleCount;
+      stats.activeConnections = pgPool.totalCount - pgPool.idleCount;
+      stats.waitingRequests = pgPool.waitingCount;
+    } else if (entry.type === 'mysql') {
+      // MySQL pool doesn't expose these stats easily
+      stats.totalConnections = this.config.max;
+    } else if (entry.type === 'mssql') {
+      const mssqlPool = entry.pool as MssqlPool;
+      stats.totalConnections = mssqlPool.size;
+      stats.activeConnections = mssqlPool.size - mssqlPool.available;
+      stats.idleConnections = mssqlPool.available;
+    }
+
+    return stats;
+  }
+
+  async closePool(connectionId: string): Promise<void> {
+    const entry = this.pools.get(connectionId);
+    if (!entry) return;
+
+    this.log(`Closing pool for ${connectionId}`);
+
+    try {
+      if (entry.type === 'postgres') {
+        await (entry.pool as PgPool).end();
+      } else if (entry.type === 'mysql') {
+        await (entry.pool as MySqlPool).end();
+      } else if (entry.type === 'mssql') {
+        await (entry.pool as MssqlPool).close();
+      }
+    } catch (error) {
+      this.log(`Error closing pool: ${error}`);
+    }
+
+    this.pools.delete(connectionId);
+  }
+
+  async closeAllPools(): Promise<void> {
+    this.log('Closing all connection pools');
+    const closePromises = Array.from(this.pools.keys()).map((id) => this.closePool(id));
+    await Promise.all(closePromises);
+  }
+
+  getPoolType(connectionId: string): 'postgres' | 'mysql' | 'mssql' | null {
+    const entry = this.pools.get(connectionId);
+    return entry?.type || null;
+  }
+
+  hasPool(connectionId: string): boolean {
+    return this.pools.has(connectionId);
+  }
+}
+
+export const connectionPoolManager = new ConnectionPoolManager();

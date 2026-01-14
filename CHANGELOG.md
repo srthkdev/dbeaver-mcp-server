@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-commit hooks via Husky
 - Vitest test framework
 - Issue and PR templates
+- Connection pooling for PostgreSQL, MySQL, and MSSQL with configurable pool settings
+- Transaction support with `begin_transaction`, `commit_transaction`, `rollback_transaction`, and `execute_in_transaction` tools
+- Query explain tool (`explain_query`) for analyzing query execution plans
+- Schema comparison tool (`compare_schemas`) for diffing schemas between connections
+- Pool statistics tool (`get_pool_stats`) for monitoring connection pool health
 
 ### Changed
 - Upgraded `@modelcontextprotocol/sdk` from 1.9.0 to 1.25.2 (security fix)
