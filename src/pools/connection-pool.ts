@@ -142,8 +142,11 @@ export class ConnectionPoolManager {
   private async createMssqlPool(connection: DBeaverConnection): Promise<PoolEntry> {
     this.log(`Creating MSSQL pool for ${connection.name}`);
 
+    const host = connection.host || 'localhost';
+    const isAzure = host.includes('.database.windows.net');
+
     const pool = new sql.ConnectionPool({
-      server: connection.host || 'localhost',
+      server: host,
       port: connection.port || 1433,
       database: connection.database,
       user: connection.user,
@@ -155,8 +158,8 @@ export class ConnectionPoolManager {
         acquireTimeoutMillis: this.config.acquireTimeoutMs,
       },
       options: {
-        encrypt: true,
-        trustServerCertificate: true,
+        encrypt: isAzure,
+        trustServerCertificate: !isAzure,
       },
     });
 
