@@ -373,6 +373,7 @@ export class DBeaverClient {
       throw new Error('User and password are required for SQL Server connection');
     }
 
+    const isAzure = host.includes('.database.windows.net');
     const config = {
       user,
       password,
@@ -380,8 +381,8 @@ export class DBeaverClient {
       port,
       database,
       options: {
-        encrypt: false,
-        trustServerCertificate: true,
+        encrypt: isAzure,
+        trustServerCertificate: !isAzure,
       },
     };
 
