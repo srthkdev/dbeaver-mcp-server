@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2026-02-15
+
+### Added
+- Connection whitelist via `DBEAVER_ALLOWED_CONNECTIONS` environment variable — restrict which DBeaver connections are visible by ID or name
+- `enforceReadOnly()` query-level enforcement — `execute_query` now strictly allows only read-only statements (SELECT, EXPLAIN, SHOW, DESCRIBE, PRAGMA)
+- Test queries for SAP HANA (`SELECT * FROM DUMMY`) and DB2 (`SYSIBM.SYSDUMMY1`)
+
+### Fixed
+- **Read-only mode bypass (Issue #19)**: `execute_query` no longer allows write operations (INSERT/UPDATE/DELETE/CREATE/ALTER/DROP). Transaction tools (`begin_transaction`, `commit_transaction`, `rollback_transaction`, `execute_in_transaction`) are now blocked in read-only mode.
+- **Unsupported driver errors (Issue #17)**: DBeaver CLI fallback now provides clear, actionable error messages listing natively supported drivers and workarounds. DBeaver availability is checked before attempting CLI fallback.
+- **UPDATE validation regex**: `UPDATE ... SET ... WHERE ...` was incorrectly blocked by the dangerous query filter. The regex now correctly allows UPDATE with WHERE clause.
+
+### Changed
+- DBeaver CLI fallback uses connection name-based spec for better compatibility
+
 ## [1.2.4] - 2026-01-15
 
 ### Added

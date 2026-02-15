@@ -176,7 +176,7 @@ class DBeaverMCPServer {
    * Get all connections, filtered by the whitelist.
    */
   private async getFilteredConnections(): Promise<DBeaverConnection[]> {
-    const connections = await this.getFilteredConnections();
+    const connections = await this.configParser.parseConnections();
     if (!this.allowedConnections) return connections;
     return connections.filter((conn) => this.isConnectionAllowed(conn));
   }
@@ -185,7 +185,7 @@ class DBeaverMCPServer {
    * Get a single connection by ID/name, respecting the whitelist.
    */
   private async getConnection(connectionId: string): Promise<DBeaverConnection | null> {
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.configParser.getConnection(connectionId);
     if (!connection) return null;
     if (!this.isConnectionAllowed(connection)) return null;
     return connection;

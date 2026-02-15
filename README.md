@@ -57,6 +57,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 | `DBEAVER_TIMEOUT` | Query timeout (ms) | `30000` |
 | `DBEAVER_DEBUG` | Enable debug logging | `false` |
 | `DBEAVER_READ_ONLY` | Disable write operations | `false` |
+| `DBEAVER_ALLOWED_CONNECTIONS` | Comma-separated whitelist of connection IDs or names | All |
 | `DBEAVER_DISABLED_TOOLS` | Comma-separated tools to disable | None |
 | `DBEAVER_POOL_MIN` | Minimum connections per pool | `2` |
 | `DBEAVER_POOL_MAX` | Maximum connections per pool | `10` |
@@ -72,6 +73,23 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
       "command": "dbeaver-mcp-server",
       "env": {
         "DBEAVER_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
+
+### Connection Whitelist
+
+Restrict which DBeaver connections are visible to the AI assistant. Accepts connection IDs or display names, comma-separated:
+
+```json
+{
+  "mcpServers": {
+    "dbeaver": {
+      "command": "dbeaver-mcp-server",
+      "env": {
+        "DBEAVER_ALLOWED_CONNECTIONS": "dev-postgres,staging-mysql"
       }
     }
   }
