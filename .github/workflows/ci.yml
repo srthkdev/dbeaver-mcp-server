@@ -67,7 +67,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
 
@@ -95,11 +95,9 @@ jobs:
             echo "Will publish $LOCAL_VERSION (npm has $NPM_VERSION)"
           fi
 
-      - name: Publish to npm
+      - name: Publish to npm (OIDC trusted publishing)
         if: steps.version_check.outputs.should_publish == 'true'
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create git tag
         if: steps.version_check.outputs.should_publish == 'true'
