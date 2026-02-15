@@ -201,6 +201,42 @@ export function sanitizeIdentifier(identifier: string): string {
 }
 
 /**
+ * Redact sensitive fields from a connection object before returning to clients.
+ * Strips passwords and other credentials to prevent credential leaks.
+ */
+export function redactConnection(conn: Record<string, any>): Record<string, any> {
+  const redacted = { ...conn };
+
+  // Redact password from top-level properties
+  if (redacted.properties) {
+    const props = { ...redacted.properties };
+    const sensitiveKeys = ['password', 'secretkey', 'secret', 'token', 'apikey', 'api_key'];
+    for (const key of Object.keys(props)) {
+      if (sensitiveKeys.some((s) => key.toLowerCase().includes(s))) {
+        props[key] = '***REDACTED***';
+      }
+    }
+    redacted.properties = props;
+  }
+
+  return redacted;
+}
+
+/**
+ * Redact sensitive fields from tool arguments before debug logging.
+ */
+export function redactArgs(args: Record<string, any>): Record<string, any> {
+  const redacted = { ...args };
+  const sensitiveKeys = ['password', 'secret', 'token', 'apikey', 'api_key', 'credential'];
+  for (const key of Object.keys(redacted)) {
+    if (sensitiveKeys.some((s) => key.toLowerCase().includes(s))) {
+      redacted[key] = '***REDACTED***';
+    }
+  }
+  return redacted;
+}
+
+/**
  * Format error messages consistently
  */
 export function formatError(error: unknown): string {

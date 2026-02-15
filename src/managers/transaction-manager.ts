@@ -179,6 +179,9 @@ export class TransactionManager {
       };
     } catch (error) {
       this.log(`Failed to commit transaction: ${error}`);
+      // Release the client back to pool even on failure to prevent resource leak
+      this.releaseClient(active);
+      this.transactions.delete(transactionId);
       throw error;
     }
   }
@@ -220,8 +223,47 @@ export class TransactionManager {
       };
     } catch (error) {
       this.log(`Failed to rollback transaction: ${error}`);
+      // Release the client back to pool even on failure to prevent resource leak
+      this.releaseClient(active);
+      this.transactions.delete(transactionId);
       throw error;
     }
+  }
+
+  /**
+   * Safely release a transaction client back to the pool.
+   * Used as a safety net when commit/rollback fails.
+   */
+  private releaseClient(active: ActiveTransaction): void {
+    try {
+      if (active.type === 'postgres') {
+        (active.client as PgPoolClient).release(true); // true = destroy the connection
+      } else if (active.type === 'mysql') {
+        (active.client as MySqlPoolConnection).release();
+      }
+      // MSSQL transactions don't hold a separate client reference
+    } catch (releaseError) {
+      this.log(`Failed to release client after error: ${releaseError}`);
+    }
+  }
+
+  /**
+   * Roll back all active transactions. Called during shutdown.
+   */
+  async rollbackAll(): Promise<number> {
+    let count = 0;
+    const ids = Array.from(this.transactions.keys());
+    for (const id of ids) {
+      try {
+        await this.rollbackTransaction(id);
+        count++;
+      } catch {
+        // Already cleaned up or failed - force remove
+        this.transactions.delete(id);
+        count++;
+      }
+    }
+    return count;
   }
 
   getTransaction(transactionId: string): Transaction | null {

@@ -153,6 +153,27 @@ export class DBeaverClient {
     }
   }
 
+  /**
+   * Check if a driver uses the Postgres wire protocol.
+   * CockroachDB, TimescaleDB, Redshift, YugabyteDB, AlloyDB, Supabase, Neon, Citus
+   * all speak Postgres wire protocol and work with the pg driver.
+   */
+  private isPostgresCompatible(driver: string): boolean {
+    const d = driver.toLowerCase();
+    return (
+      d.includes('postgres') ||
+      d.includes('cockroach') ||
+      d.includes('timescale') ||
+      d.includes('redshift') ||
+      d.includes('yugabyte') ||
+      d.includes('alloydb') ||
+      (d.includes('aurora') && d.includes('postgres')) ||
+      d.includes('supabase') ||
+      d.includes('neon') ||
+      d.includes('citus')
+    );
+  }
+
   private async executeWithNativeTool(
     connection: DBeaverConnection,
     query: string
@@ -161,7 +182,7 @@ export class DBeaverClient {
 
     if (driver.includes('sqlite')) {
       return this.executeSQLiteQuery(connection, query);
-    } else if (driver.includes('postgres')) {
+    } else if (this.isPostgresCompatible(driver)) {
       return this.executePostgreSQLQuery(connection, query);
     } else if (
       driver.includes('mssql') ||
@@ -178,7 +199,8 @@ export class DBeaverClient {
         return await this.executeDBeaverQuery(connection, query);
       } catch (cliError) {
         const driverName = connection.driver;
-        const nativeDrivers = 'PostgreSQL, MySQL/MariaDB, SQL Server (MSSQL), SQLite';
+        const nativeDrivers =
+          'PostgreSQL (+ CockroachDB, TimescaleDB, Redshift, YugabyteDB, Supabase, Neon, Citus, AlloyDB), MySQL/MariaDB, SQL Server (MSSQL), SQLite';
         const cliMsg = cliError instanceof Error ? cliError.message : String(cliError);
         throw new Error(
           `Database driver "${driverName}" is not natively supported. ` +

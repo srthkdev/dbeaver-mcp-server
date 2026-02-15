@@ -19,6 +19,7 @@ interface PoolEntry {
 
 export class ConnectionPoolManager {
   private pools: Map<string, PoolEntry> = new Map();
+  private pendingCreation: Map<string, Promise<PoolEntry | null>> = new Map();
   private config: PoolConfig;
   private debug: boolean;
 
@@ -36,15 +37,34 @@ export class ConnectionPoolManager {
   async getPool(connection: DBeaverConnection): Promise<PoolEntry | null> {
     const poolKey = connection.id;
 
+    // Return existing pool
     if (this.pools.has(poolKey)) {
       this.log(`Reusing existing pool for ${connection.name}`);
       return this.pools.get(poolKey)!;
     }
 
+    // If another call is already creating this pool, wait for it
+    if (this.pendingCreation.has(poolKey)) {
+      this.log(`Waiting for pending pool creation for ${connection.name}`);
+      return this.pendingCreation.get(poolKey)!;
+    }
+
+    // Create the pool with deduplication
+    const creationPromise = this.createPool(connection);
+    this.pendingCreation.set(poolKey, creationPromise);
+
+    try {
+      return await creationPromise;
+    } finally {
+      this.pendingCreation.delete(poolKey);
+    }
+  }
+
+  private async createPool(connection: DBeaverConnection): Promise<PoolEntry | null> {
     const driver = connection.driver.toLowerCase();
 
     try {
-      if (driver.includes('postgres')) {
+      if (this.isPostgresCompatible(driver)) {
         return await this.createPostgresPool(connection);
       } else if (driver.includes('mysql') || driver.includes('mariadb')) {
         return await this.createMysqlPool(connection);
@@ -57,6 +77,26 @@ export class ConnectionPoolManager {
     }
 
     return null;
+  }
+
+  /**
+   * Check if a driver uses the Postgres wire protocol.
+   * Includes CockroachDB, TimescaleDB, Redshift, YugabyteDB, AlloyDB, Aurora Postgres, etc.
+   */
+  isPostgresCompatible(driver: string): boolean {
+    const d = driver.toLowerCase();
+    return (
+      d.includes('postgres') ||
+      d.includes('cockroach') ||
+      d.includes('timescale') ||
+      d.includes('redshift') ||
+      d.includes('yugabyte') ||
+      d.includes('alloydb') ||
+      (d.includes('aurora') && d.includes('postgres')) ||
+      d.includes('supabase') ||
+      d.includes('neon') ||
+      d.includes('citus')
+    );
   }
 
   private async createPostgresPool(connection: DBeaverConnection): Promise<PoolEntry> {

@@ -18,6 +18,8 @@ import {
   sanitizeConnectionId,
   formatError,
   convertToCSV,
+  redactConnection,
+  redactArgs,
 } from './utils.js';
 import { ConnectionPoolManager } from './pools/index.js';
 import { TransactionManager } from './managers/index.js';
@@ -48,7 +50,9 @@ const WRITE_TOOLS = [
   'execute_in_transaction',
 ];
 
-// Row limits
+// Limits
+const MAX_INSIGHTS = 1000;
+const STALE_TRANSACTION_CHECK_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_QUERY_ROWS = 100000;
 const MAX_EXPORT_ROWS = 1000000;
 const DEFAULT_QUERY_ROWS = 1000;
@@ -66,6 +70,7 @@ class DBeaverMCPServer {
   private readOnly: boolean;
   private disabledTools: string[];
   private allowedConnections: Set<string> | null; // null = allow all
+  private staleCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.debug = process.env.DBEAVER_DEBUG === 'true';
@@ -157,6 +162,10 @@ class DBeaverMCPServer {
 
   private saveInsights() {
     try {
+      // Cap insights to prevent unbounded growth
+      if (this.insights.length > MAX_INSIGHTS) {
+        this.insights = this.insights.slice(-MAX_INSIGHTS);
+      }
       fs.writeFileSync(this.insightsFile, JSON.stringify(this.insights, null, 2));
     } catch (error) {
       this.log(`Failed to save insights: ${error}`, 'error');
@@ -206,6 +215,30 @@ class DBeaverMCPServer {
         this.log(String(reason), 'debug');
       }
     });
+
+    // Graceful shutdown: roll back active transactions, then close pools
+    const shutdown = async () => {
+      this.log('Shutting down gracefully...');
+      try {
+        const rolledBack = await this.transactionManager.rollbackAll();
+        if (rolledBack > 0) {
+          this.log(`Rolled back ${rolledBack} active transaction(s) during shutdown`);
+        }
+      } catch (error) {
+        this.log(`Error rolling back transactions during shutdown: ${formatError(error)}`, 'error');
+      }
+      try {
+        await this.poolManager.closeAllPools();
+      } catch (error) {
+        this.log(`Error closing pools during shutdown: ${formatError(error)}`, 'error');
+      }
+      if (this.staleCleanupInterval) {
+        clearInterval(this.staleCleanupInterval);
+      }
+      process.exit(0);
+    };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
   }
 
   private setupResourceHandlers() {
@@ -727,7 +760,10 @@ class DBeaverMCPServer {
       }
 
       try {
-        this.log(`Executing tool: ${name} with args: ${JSON.stringify(args)}`, 'debug');
+        this.log(
+          `Executing tool: ${name} with args: ${JSON.stringify(redactArgs(args || {}))}`,
+          'debug'
+        );
 
         switch (name) {
           case 'list_connections':
@@ -889,11 +925,13 @@ class DBeaverMCPServer {
     const connections = await this.getFilteredConnections();
 
     if (args.includeDetails) {
+      // Always redact credentials before returning to client
+      const redacted = connections.map((conn) => redactConnection(conn));
       return {
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify(connections, null, 2),
+            text: JSON.stringify(redacted, null, 2),
           },
         ],
       };
@@ -926,11 +964,14 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
+    // Redact credentials before returning to client
+    const redacted = redactConnection(connection);
+
     return {
       content: [
         {
           type: 'text' as const,
-          text: JSON.stringify(connection, null, 2),
+          text: JSON.stringify(redacted, null, 2),
         },
       ],
     };
@@ -1654,6 +1695,19 @@ class DBeaverMCPServer {
       await this.server.connect(transport);
 
       this.log('DBeaver MCP server started successfully');
+
+      // Periodic cleanup of stale transactions (leaked transactions older than 1 hour)
+      this.staleCleanupInterval = setInterval(async () => {
+        try {
+          const cleaned = await this.transactionManager.cleanupStaleTransactions();
+          if (cleaned > 0) {
+            this.log(`Cleaned up ${cleaned} stale transaction(s)`);
+          }
+        } catch (error) {
+          this.log(`Stale transaction cleanup error: ${formatError(error)}`, 'debug');
+        }
+      }, STALE_TRANSACTION_CHECK_MS);
+      this.staleCleanupInterval.unref(); // Don't prevent process exit
 
       if (this.readOnly) {
         this.log('Read-only mode enabled: write operations are disabled');

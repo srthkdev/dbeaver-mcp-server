@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-02-16
+
+### Added
+- **Postgres-compatible driver routing**: CockroachDB, TimescaleDB, Redshift, YugabyteDB, AlloyDB, Supabase, Neon, and Citus now route through the native PostgreSQL driver automatically
+- **CI auto-publish**: Every push to `main` with a new version automatically publishes to npm and creates a git tag
+- **Stale transaction cleanup**: Periodic cleanup (every 5 minutes) automatically rolls back transactions older than 1 hour
+- **Graceful shutdown improvements**: Active transactions are rolled back before connection pools are closed
+- `rollbackAll()` method on TransactionManager for shutdown scenarios
+
+### Fixed
+- **Credential leak (Security)**: `list_connections` with `includeDetails=true` and `get_connection_info` no longer expose passwords — all sensitive fields are redacted
+- **Debug log credential leak (Security)**: Tool arguments are redacted before debug logging to prevent passwords appearing in logs
+- **Pool creation race condition**: Concurrent `getPool()` calls for the same connection no longer create duplicate pools — uses a pending-creation map for deduplication
+- **Transaction resource leak**: Failed `commit`/`rollback` now releases the database client back to the pool instead of leaking it
+- **Insights file unbounded growth**: Capped at 1,000 entries, oldest entries are trimmed on save
+
+### Changed
+- CI workflow now includes a `publish` job that runs after all checks pass on `main`
+- Pool manager's `isPostgresCompatible()` is now a public method shared with dbeaver-client
+
 ## [1.2.5] - 2026-02-15
 
 ### Added
