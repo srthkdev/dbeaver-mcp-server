@@ -172,10 +172,23 @@ export class DBeaverClient {
     } else if (driver.includes('mysql') || driver.includes('mariadb')) {
       return this.executeMySQLQuery(connection, query);
     } else {
-      // Fall back to DBeaver CLI for all other drivers (e.g. Oracle).
-      // This leverages DBeaver's drivers and connection configuration, so the user doesn't
-      // need native CLI tools installed for every database.
-      return this.executeDBeaverQuery(connection, query);
+      // Unsupported driver – try DBeaver CLI as a best-effort fallback, but
+      // wrap with a clear error message listing the natively supported drivers.
+      try {
+        return await this.executeDBeaverQuery(connection, query);
+      } catch (cliError) {
+        const driverName = connection.driver;
+        const nativeDrivers = 'PostgreSQL, MySQL/MariaDB, SQL Server (MSSQL), SQLite';
+        const cliMsg = cliError instanceof Error ? cliError.message : String(cliError);
+        throw new Error(
+          `Database driver "${driverName}" is not natively supported. ` +
+            `Natively supported drivers: ${nativeDrivers}. ` +
+            `DBeaver CLI fallback also failed: ${cliMsg}. ` +
+            `To use "${driverName}", consider connecting through a supported driver ` +
+            `(e.g. via an ODBC/JDBC bridge) or ensure DBeaver CLI is installed and ` +
+            `the connection is configured in your DBeaver workspace.`
+        );
+      }
     }
   }
 
@@ -183,6 +196,13 @@ export class DBeaverClient {
     connection: DBeaverConnection,
     query: string
   ): Promise<QueryResult> {
+    // Verify DBeaver executable exists before attempting
+    if (!this.isDBeaverAvailable()) {
+      throw new Error(
+        'DBeaver executable not found. Install DBeaver or set DBEAVER_PATH environment variable.'
+      );
+    }
+
     const tempDir = os.tmpdir();
     const exportId = `query_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
     const sqlFile = path.join(tempDir, `${exportId}.sql`);
@@ -191,12 +211,15 @@ export class DBeaverClient {
     try {
       fs.writeFileSync(sqlFile, query, 'utf-8');
 
+      // Build connection spec - try name first, then ID
+      const conSpec = `name=${connection.name}`;
+
       const args = [
         '-nosplash',
         '-reuseWorkspace',
         ...(this.workspacePath ? ['-data', this.workspacePath] : []),
         '-con',
-        connection.id,
+        conSpec,
         '-f',
         sqlFile,
         '-o',
@@ -216,6 +239,20 @@ export class DBeaverClient {
       return await this.parseCSVOutput(outputFile);
     } finally {
       this.cleanupFiles([sqlFile, outputFile]);
+    }
+  }
+
+  private isDBeaverAvailable(): boolean {
+    try {
+      // Check if the executable path exists (skip for bare command names that rely on PATH)
+      if (this.executablePath.includes('/') || this.executablePath.includes('\\')) {
+        return fs.existsSync(this.executablePath);
+      }
+      // For bare command names (e.g., 'dbeaver'), we can't easily check PATH,
+      // so assume it might be available and let executeDBeaver handle the error
+      return true;
+    } catch {
+      return false;
     }
   }
 

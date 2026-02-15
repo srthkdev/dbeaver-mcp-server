@@ -71,8 +71,8 @@ export function validateQuery(query: string): string | null {
     /drop\s+database/i,
     /drop\s+schema/i,
     /truncate\s+table/i,
-    /delete\s+from\s+\w+\s*$/i, // DELETE without WHERE clause
-    /update\s+\w+\s+set\s+.*\s*$/i, // UPDATE without WHERE clause
+    /delete\s+from\s+\w+\s*;?\s*$/i, // DELETE without WHERE clause
+    /update\s+(?:(?!where).)*\s*;?\s*$/i, // UPDATE without WHERE clause
     /grant\s+/i,
     /revoke\s+/i,
     /create\s+user/i,
@@ -106,6 +106,39 @@ export function validateQuery(query: string): string | null {
   }
 
   return null; // Query is valid
+}
+
+/**
+ * Check if a query is read-only (SELECT, EXPLAIN, WITH...SELECT, SHOW, DESCRIBE, etc.)
+ * Returns null if the query is read-only, or an error message if it's a write operation.
+ */
+export function enforceReadOnly(query: string): string | null {
+  if (!query || query.trim().length === 0) {
+    return 'Query cannot be empty';
+  }
+
+  const trimmed = query.trim().toLowerCase();
+
+  // Allow read-only statements
+  const readOnlyPrefixes = [
+    /^select\s/,
+    /^select$/, // bare SELECT (e.g. SELECT 1)
+    /^with\s/, // CTEs that start with WITH
+    /^explain\s/,
+    /^show\s/,
+    /^describe\s/,
+    /^desc\s/,
+    /^pragma\s/, // SQLite PRAGMA
+    /^set\s+search_path/, // PostgreSQL search_path is safe
+  ];
+
+  for (const pattern of readOnlyPrefixes) {
+    if (pattern.test(trimmed)) {
+      return null; // Query is read-only
+    }
+  }
+
+  return 'Only read-only queries (SELECT, EXPLAIN, SHOW, DESCRIBE) are allowed in read-only mode. Use write_query for data modifications.';
 }
 
 /**
@@ -198,6 +231,10 @@ export function getTestQuery(driver: string): string {
     return 'SELECT sqlite_version();';
   } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver')) {
     return 'SELECT @@VERSION;';
+  } else if (driverLower.includes('hana') || driverLower.includes('sap')) {
+    return 'SELECT * FROM DUMMY;';
+  } else if (driverLower.includes('db2')) {
+    return 'SELECT 1 FROM SYSIBM.SYSDUMMY1;';
   } else if (driverLower.includes('mongodb')) {
     return 'db.version()';
   } else if (driverLower.includes('redis')) {

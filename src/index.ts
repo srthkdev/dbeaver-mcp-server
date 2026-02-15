@@ -11,8 +11,14 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { DBeaverConfigParser } from './config-parser.js';
 import { DBeaverClient } from './dbeaver-client.js';
-import { BusinessInsight, SchemaDiff } from './types.js';
-import { validateQuery, sanitizeConnectionId, formatError, convertToCSV } from './utils.js';
+import { BusinessInsight, DBeaverConnection, SchemaDiff } from './types.js';
+import {
+  validateQuery,
+  enforceReadOnly,
+  sanitizeConnectionId,
+  formatError,
+  convertToCSV,
+} from './utils.js';
 import { ConnectionPoolManager } from './pools/index.js';
 import { TransactionManager } from './managers/index.js';
 import { buildExplainQuery, parseExplainOutput } from './utils/query-analyzer.js';
@@ -31,7 +37,16 @@ const packageJson = JSON.parse(
 const VERSION = packageJson.version;
 
 // Tool categories for filtering
-const WRITE_TOOLS = ['write_query', 'create_table', 'alter_table', 'drop_table'];
+const WRITE_TOOLS = [
+  'write_query',
+  'create_table',
+  'alter_table',
+  'drop_table',
+  'begin_transaction',
+  'commit_transaction',
+  'rollback_transaction',
+  'execute_in_transaction',
+];
 
 // Row limits
 const MAX_QUERY_ROWS = 100000;
@@ -50,6 +65,7 @@ class DBeaverMCPServer {
   private insightsFile: string;
   private readOnly: boolean;
   private disabledTools: string[];
+  private allowedConnections: Set<string> | null; // null = allow all
 
   constructor() {
     this.debug = process.env.DBEAVER_DEBUG === 'true';
@@ -58,6 +74,15 @@ class DBeaverMCPServer {
       .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
+
+    // Parse allowed connections whitelist
+    const allowedRaw = process.env.DBEAVER_ALLOWED_CONNECTIONS || '';
+    const allowedList = allowedRaw
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    this.allowedConnections = allowedList.length > 0 ? new Set(allowedList) : null;
+
     this.insightsFile = path.join(os.tmpdir(), 'dbeaver-mcp-insights.json');
 
     this.server = new Server(
@@ -138,6 +163,34 @@ class DBeaverMCPServer {
     }
   }
 
+  /**
+   * Check if a connection is allowed by the whitelist.
+   * Matches against both connection ID and name.
+   */
+  private isConnectionAllowed(conn: { id: string; name: string }): boolean {
+    if (!this.allowedConnections) return true; // No whitelist = allow all
+    return this.allowedConnections.has(conn.id) || this.allowedConnections.has(conn.name);
+  }
+
+  /**
+   * Get all connections, filtered by the whitelist.
+   */
+  private async getFilteredConnections(): Promise<DBeaverConnection[]> {
+    const connections = await this.getFilteredConnections();
+    if (!this.allowedConnections) return connections;
+    return connections.filter((conn) => this.isConnectionAllowed(conn));
+  }
+
+  /**
+   * Get a single connection by ID/name, respecting the whitelist.
+   */
+  private async getConnection(connectionId: string): Promise<DBeaverConnection | null> {
+    const connection = await this.getConnection(connectionId);
+    if (!connection) return null;
+    if (!this.isConnectionAllowed(connection)) return null;
+    return connection;
+  }
+
   private setupErrorHandling() {
     process.on('uncaughtException', (error) => {
       this.log(`Uncaught exception: ${error.message}`, 'error');
@@ -159,7 +212,7 @@ class DBeaverMCPServer {
     // List all available database resources (table schemas)
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
       try {
-        const connections = await this.configParser.parseConnections();
+        const connections = await this.getFilteredConnections();
         const resources: any[] = [];
 
         for (const connection of connections) {
@@ -202,7 +255,7 @@ class DBeaverMCPServer {
         const connectionId = uri.hostname;
         const tableName = pathParts[pathParts.length - 2];
 
-        const connection = await this.configParser.getConnection(connectionId);
+        const connection = await this.getConnection(connectionId);
         if (!connection) {
           throw new Error(`Connection not found: ${connectionId}`);
         }
@@ -833,7 +886,7 @@ class DBeaverMCPServer {
   }
 
   private async handleListConnections(args: { includeDetails?: boolean }) {
-    const connections = await this.configParser.parseConnections();
+    const connections = await this.getFilteredConnections();
 
     if (args.includeDetails) {
       return {
@@ -867,7 +920,7 @@ class DBeaverMCPServer {
 
   private async handleGetConnectionInfo(args: { connectionId: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.configParser.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -899,7 +952,13 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, validationError);
     }
 
-    const connection = await this.configParser.getConnection(connectionId);
+    // execute_query is for read-only operations - enforce SELECT-only
+    const readOnlyError = enforceReadOnly(query);
+    if (readOnlyError) {
+      throw new McpError(ErrorCode.InvalidParams, readOnlyError);
+    }
+
+    const connection = await this.getConnection(connectionId);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
@@ -982,7 +1041,7 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, validationError);
     }
 
-    const connection = await this.configParser.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
@@ -1015,7 +1074,7 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, 'Only CREATE TABLE statements are allowed');
     }
 
-    const connection = await this.configParser.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
@@ -1048,7 +1107,7 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, 'Only ALTER TABLE statements are allowed');
     }
 
-    const connection = await this.configParser.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
@@ -1104,7 +1163,7 @@ class DBeaverMCPServer {
       };
     }
 
-    const connection = await this.configParser.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
@@ -1146,7 +1205,7 @@ class DBeaverMCPServer {
     includeIndexes?: boolean;
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.configParser.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1183,7 +1242,7 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, 'Only SELECT queries are allowed for export');
     }
 
-    const connection = await this.configParser.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
@@ -1237,7 +1296,7 @@ class DBeaverMCPServer {
 
   private async handleTestConnection(args: { connectionId: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.configParser.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1257,7 +1316,7 @@ class DBeaverMCPServer {
 
   private async handleGetDatabaseStats(args: { connectionId: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.configParser.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1281,7 +1340,7 @@ class DBeaverMCPServer {
     includeViews?: boolean;
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.configParser.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1369,7 +1428,7 @@ class DBeaverMCPServer {
   // Transaction handlers
   private async handleBeginTransaction(args: { connectionId: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.configParser.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1442,7 +1501,7 @@ class DBeaverMCPServer {
     format?: 'text' | 'json';
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.configParser.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1478,8 +1537,8 @@ class DBeaverMCPServer {
     const sourceConnId = sanitizeConnectionId(args.sourceConnectionId);
     const targetConnId = sanitizeConnectionId(args.targetConnectionId);
 
-    const sourceConn = await this.configParser.getConnection(sourceConnId);
-    const targetConn = await this.configParser.getConnection(targetConnId);
+    const sourceConn = await this.getConnection(sourceConnId);
+    const targetConn = await this.getConnection(targetConnId);
 
     if (!sourceConn) {
       throw new McpError(ErrorCode.InvalidParams, `Source connection not found: ${sourceConnId}`);
@@ -1543,7 +1602,7 @@ class DBeaverMCPServer {
   // Pool management handlers
   private async handleGetPoolStats(args: { connectionId: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.configParser.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1596,6 +1655,13 @@ class DBeaverMCPServer {
 
       this.log('DBeaver MCP server started successfully');
 
+      if (this.readOnly) {
+        this.log('Read-only mode enabled: write operations are disabled');
+      }
+      if (this.allowedConnections) {
+        this.log(`Connection whitelist active: ${Array.from(this.allowedConnections).join(', ')}`);
+      }
+
       if (this.debug) {
         const debugInfo = this.configParser.getDebugInfo();
         this.log(`Debug info: ${JSON.stringify(debugInfo, null, 2)}`, 'debug');
@@ -1620,9 +1686,12 @@ Options:
   --debug        Enable debug logging
 
 Environment Variables:
-  DBEAVER_PATH      Path to DBeaver executable
-  DBEAVER_TIMEOUT   Query timeout in milliseconds (default: 30000)
-  DBEAVER_DEBUG     Enable debug logging (true/false)
+  DBEAVER_PATH                 Path to DBeaver executable
+  DBEAVER_TIMEOUT              Query timeout in milliseconds (default: 30000)
+  DBEAVER_DEBUG                Enable debug logging (true/false)
+  DBEAVER_READ_ONLY            Disable all write operations (true/false)
+  DBEAVER_ALLOWED_CONNECTIONS  Comma-separated whitelist of connection IDs or names
+  DBEAVER_DISABLED_TOOLS       Comma-separated list of tools to disable
 
 Features:
   - Universal database support via DBeaver connections

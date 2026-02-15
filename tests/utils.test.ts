@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   validateQuery,
+  enforceReadOnly,
   sanitizeConnectionId,
   sanitizeIdentifier,
   getTestQuery,
@@ -35,14 +36,86 @@ describe('validateQuery', () => {
     expect(validateQuery('UPDATE users SET name = "test"')).not.toBeNull();
   });
 
-  // Note: Current implementation has a limitation where UPDATE with WHERE
-  // is still flagged due to regex pattern. This is a known issue.
-  it.skip('should allow UPDATE with WHERE', () => {
+  it('should allow UPDATE with WHERE', () => {
     expect(validateQuery('UPDATE users SET name = "test" WHERE id = 1')).toBeNull();
+  });
+
+  it('should block UPDATE without WHERE even with complex SET', () => {
+    expect(validateQuery('UPDATE users SET name = "test", age = 30')).not.toBeNull();
   });
 
   it('should return error for empty query', () => {
     expect(validateQuery('')).not.toBeNull();
+  });
+
+  it('should block GRANT statements', () => {
+    expect(validateQuery('GRANT ALL ON users TO admin')).not.toBeNull();
+  });
+
+  it('should block REVOKE statements', () => {
+    expect(validateQuery('REVOKE ALL ON users FROM admin')).not.toBeNull();
+  });
+
+  it('should allow INSERT statements', () => {
+    expect(validateQuery('INSERT INTO users (name) VALUES ("test")')).toBeNull();
+  });
+});
+
+describe('enforceReadOnly', () => {
+  it('should allow SELECT queries', () => {
+    expect(enforceReadOnly('SELECT * FROM users')).toBeNull();
+  });
+
+  it('should allow SELECT with subqueries', () => {
+    expect(enforceReadOnly('SELECT * FROM (SELECT id FROM users) sub')).toBeNull();
+  });
+
+  it('should allow EXPLAIN queries', () => {
+    expect(enforceReadOnly('EXPLAIN SELECT * FROM users')).toBeNull();
+  });
+
+  it('should allow WITH (CTE) queries', () => {
+    expect(enforceReadOnly('WITH cte AS (SELECT 1) SELECT * FROM cte')).toBeNull();
+  });
+
+  it('should allow SHOW queries', () => {
+    expect(enforceReadOnly('SHOW TABLES')).toBeNull();
+  });
+
+  it('should allow DESCRIBE queries', () => {
+    expect(enforceReadOnly('DESCRIBE users')).toBeNull();
+  });
+
+  it('should allow PRAGMA queries', () => {
+    expect(enforceReadOnly('PRAGMA table_info(users)')).toBeNull();
+  });
+
+  it('should block INSERT queries', () => {
+    expect(enforceReadOnly('INSERT INTO users (name) VALUES ("test")')).not.toBeNull();
+  });
+
+  it('should block UPDATE queries', () => {
+    expect(enforceReadOnly('UPDATE users SET name = "test" WHERE id = 1')).not.toBeNull();
+  });
+
+  it('should block DELETE queries', () => {
+    expect(enforceReadOnly('DELETE FROM users WHERE id = 1')).not.toBeNull();
+  });
+
+  it('should block CREATE TABLE queries', () => {
+    expect(enforceReadOnly('CREATE TABLE test (id INT)')).not.toBeNull();
+  });
+
+  it('should block DROP TABLE queries', () => {
+    expect(enforceReadOnly('DROP TABLE users')).not.toBeNull();
+  });
+
+  it('should block ALTER TABLE queries', () => {
+    expect(enforceReadOnly('ALTER TABLE users ADD COLUMN age INT')).not.toBeNull();
+  });
+
+  it('should return error for empty query', () => {
+    expect(enforceReadOnly('')).not.toBeNull();
   });
 });
 
@@ -103,6 +176,14 @@ describe('getTestQuery', () => {
 
   it('should return correct query for sqlite', () => {
     expect(getTestQuery('sqlite')).toContain('SELECT');
+  });
+
+  it('should return correct query for SAP HANA', () => {
+    expect(getTestQuery('sap_hana')).toContain('DUMMY');
+  });
+
+  it('should return correct query for DB2', () => {
+    expect(getTestQuery('db2_zos')).toContain('SYSIBM');
   });
 
   it('should return default query for unknown driver', () => {
